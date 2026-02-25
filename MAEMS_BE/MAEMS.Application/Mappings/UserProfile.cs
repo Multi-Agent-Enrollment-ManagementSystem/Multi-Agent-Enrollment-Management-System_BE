@@ -1,0 +1,17 @@
+using AutoMapper;
+using MAEMS.Application.DTOs.User;
+using MAEMS.Domain.Entities;
+
+namespace MAEMS.Application.Mappings;
+
+public class UserProfile : Profile
+{
+    public UserProfile()
+    {
+        CreateMap<User, UserDto>().ReverseMap();
+        
+        // Mapping for Login response - only essential fields
+        CreateMap<User, LoginUserDto>()
+            .ForMember(dest => dest.Role, opt => opt.Ignore()); // Role will be set manually after fetching from database
+    }
+}
