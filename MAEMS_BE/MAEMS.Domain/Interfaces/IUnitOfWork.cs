@@ -5,6 +5,7 @@ public interface IUnitOfWork : IDisposable
     IRoleRepository Roles { get; }
     IUserRepository Users { get; }
     IMajorRepository Majors { get; }
+    IProgramRepository Programs { get; }
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitTransactionAsync();

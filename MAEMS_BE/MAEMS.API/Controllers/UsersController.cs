@@ -1,7 +1,10 @@
 using MAEMS.Application.Features.Users.Commands.LoginUser;
 using MAEMS.Application.Features.Users.Commands.RegisterUser;
+using MAEMS.Application.Features.Users.Queries.GetUserProfile;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace MAEMS.API.Controllers;
 
@@ -47,6 +50,33 @@ public class UsersController : ControllerBase
         if (!result.Success)
         {
             return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get user profile (requires JWT authentication)
+    /// </summary>
+    /// <returns>User profile information</returns>
+    [HttpGet("profile")]
+    [Authorize]
+    public async Task<IActionResult> GetProfile()
+    {
+        // Get user ID from JWT token claims
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+        {
+            return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+        }
+
+        var query = new GetUserProfileQuery(userId);
+        var result = await _mediator.Send(query);
+
+        if (!result.Success)
+        {
+            return NotFound(result);
         }
 
         return Ok(result);

@@ -13,5 +13,9 @@ public class UserProfile : Profile
         // Mapping for Login response - only essential fields
         CreateMap<User, LoginUserDto>()
             .ForMember(dest => dest.Role, opt => opt.Ignore()); // Role will be set manually after fetching from database
+        
+        // Mapping for User Profile
+        CreateMap<User, UserProfileDto>()
+            .ForMember(dest => dest.RoleName, opt => opt.Ignore()); // RoleName will be set manually after fetching from database
     }
 }

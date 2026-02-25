@@ -11,6 +11,7 @@ public class UnitOfWork : IUnitOfWork
     private IRoleRepository? _roleRepository;
     private IUserRepository? _userRepository;
     private IMajorRepository? _majorRepository;
+    private IProgramRepository? _programRepository;
 
     public UnitOfWork(postgresContext context)
     {
@@ -38,6 +39,14 @@ public class UnitOfWork : IUnitOfWork
         get
         {
             return _majorRepository ??= new MajorRepository(_context);
+        }
+    }
+
+    public IProgramRepository Programs
+    {
+        get
+        {
+            return _programRepository ??= new ProgramRepository(_context);
         }
     }
 

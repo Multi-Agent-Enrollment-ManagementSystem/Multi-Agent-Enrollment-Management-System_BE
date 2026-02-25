@@ -91,11 +91,13 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// Enable Swagger in all environments (including Production for Azure deployment)
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "MAEMS API v1");
+    c.RoutePrefix = "swagger"; // Set Swagger UI at /swagger
+});
 
 // Add Global Exception Handler
 app.UseMiddleware<ExceptionHandlingMiddleware>();
