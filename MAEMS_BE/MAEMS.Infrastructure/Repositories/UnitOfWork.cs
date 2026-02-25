@@ -10,6 +10,7 @@ public class UnitOfWork : IUnitOfWork
     private IDbContextTransaction? _transaction;
     private IRoleRepository? _roleRepository;
     private IUserRepository? _userRepository;
+    private IMajorRepository? _majorRepository;
 
     public UnitOfWork(postgresContext context)
     {
@@ -29,6 +30,14 @@ public class UnitOfWork : IUnitOfWork
         get
         {
             return _userRepository ??= new UserRepository(_context);
+        }
+    }
+
+    public IMajorRepository Majors
+    {
+        get
+        {
+            return _majorRepository ??= new MajorRepository(_context);
         }
     }
 
