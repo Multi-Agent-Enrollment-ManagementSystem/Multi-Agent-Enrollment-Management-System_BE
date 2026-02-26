@@ -1,5 +1,7 @@
 using MAEMS.Application.Features.Users.Commands.LoginUser;
+using MAEMS.Application.Features.Users.Commands.RefreshToken;
 using MAEMS.Application.Features.Users.Commands.RegisterUser;
+using MAEMS.Application.Features.Users.Commands.VerifyEmail;
 using MAEMS.Application.Features.Users.Queries.GetUserProfile;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -13,10 +15,12 @@ namespace MAEMS.API.Controllers;
 public class UsersController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IConfiguration _configuration;
 
-    public UsersController(IMediator mediator)
+    public UsersController(IMediator mediator, IConfiguration configuration)
     {
         _mediator = mediator;
+        _configuration = configuration;
     }
 
     /// <summary>
@@ -41,9 +45,27 @@ public class UsersController : ControllerBase
     /// Login with username/email and password
     /// </summary>
     /// <param name="command">Login credentials (UsernameOrEmail, Password)</param>
-    /// <returns>JWT token and user information</returns>
+    /// <returns>JWT access token, refresh token and user information</returns>
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginUserCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Refresh access token using refresh token
+    /// </summary>
+    /// <param name="command">Refresh token request (AccessToken, RefreshToken)</param>
+    /// <returns>New JWT access token and refresh token</returns>
+    [HttpPost("refresh-token")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenCommand command)
     {
         var result = await _mediator.Send(command);
 
@@ -80,5 +102,32 @@ public class UsersController : ControllerBase
         }
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Verify user email with verification token
+    /// </summary>
+    /// <param name="token">Email verification token</param>
+    /// <returns>Redirects to frontend URL</returns>
+    [HttpGet("verify-email")]
+    public async Task<IActionResult> VerifyEmail([FromQuery] string token)
+    {
+        var frontendUrl = _configuration["FrontendUrl"] ?? "https://google.com";
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Redirect(frontendUrl);
+        }
+
+        var command = new VerifyEmailCommand(token);
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return Redirect(frontendUrl);
+        }
+
+        // Redirect to login page on success
+        return Redirect($"{frontendUrl}");
     }
 }

@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using MAEMS.Application.Interfaces;
 using Microsoft.Extensions.Configuration;
@@ -14,6 +15,7 @@ public class JwtService : IJwtService
     private readonly string _issuer;
     private readonly string _audience;
     private readonly int _expiryInMinutes;
+    private readonly int _refreshTokenExpiryInDays;
 
     public JwtService(IConfiguration configuration)
     {
@@ -22,6 +24,7 @@ public class JwtService : IJwtService
         _issuer = _configuration["JwtSettings:Issuer"] ?? "MAEMS_API";
         _audience = _configuration["JwtSettings:Audience"] ?? "MAEMS_Client";
         _expiryInMinutes = int.Parse(_configuration["JwtSettings:ExpiryInMinutes"] ?? "60");
+        _refreshTokenExpiryInDays = int.Parse(_configuration["JwtSettings:RefreshTokenExpiryInDays"] ?? "7");
     }
 
     public string GenerateToken(int userId, string username, string email, string? roleName)
@@ -57,5 +60,53 @@ public class JwtService : IJwtService
     public DateTime GetTokenExpiration()
     {
         return DateTime.UtcNow.AddMinutes(_expiryInMinutes);
+    }
+
+    public string GenerateRefreshToken()
+    {
+        var randomNumber = new byte[64];
+        using var rng = RandomNumberGenerator.Create();
+        rng.GetBytes(randomNumber);
+        return Convert.ToBase64String(randomNumber);
+    }
+
+    public ClaimsPrincipal? ValidateToken(string token)
+    {
+        try
+        {
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.UTF8.GetBytes(_secretKey);
+
+            var validationParameters = new TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
+                ValidateIssuer = true,
+                ValidIssuer = _issuer,
+                ValidateAudience = true,
+                ValidAudience = _audience,
+                ValidateLifetime = false, // We don't validate lifetime here as we're checking expired access tokens
+                ClockSkew = TimeSpan.Zero
+            };
+
+            var principal = tokenHandler.ValidateToken(token, validationParameters, out SecurityToken validatedToken);
+
+            if (validatedToken is not JwtSecurityToken jwtSecurityToken ||
+                !jwtSecurityToken.Header.Alg.Equals(SecurityAlgorithms.HmacSha256, StringComparison.InvariantCultureIgnoreCase))
+            {
+                return null;
+            }
+
+            return principal;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public DateTime GetRefreshTokenExpiration()
+    {
+        return DateTime.UtcNow.AddDays(_refreshTokenExpiryInDays);
     }
 }

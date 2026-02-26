@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using AutoMapper;
 using MAEMS.Application.DTOs.User;
 using MAEMS.Application.Interfaces;
@@ -5,39 +6,52 @@ using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
 using MediatR;
 
-namespace MAEMS.Application.Features.Users.Commands.LoginUser;
+namespace MAEMS.Application.Features.Users.Commands.RefreshToken;
 
-public class LoginUserCommandHandler : IRequestHandler<LoginUserCommand, BaseResponse<LoginResponseDto>>
+public class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCommand, BaseResponse<LoginResponseDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
     private readonly IJwtService _jwtService;
 
-    public LoginUserCommandHandler(IUnitOfWork unitOfWork, IMapper mapper, IJwtService jwtService)
+    public RefreshTokenCommandHandler(IUnitOfWork unitOfWork, IMapper mapper, IJwtService jwtService)
     {
         _unitOfWork = unitOfWork;
         _mapper = mapper;
         _jwtService = jwtService;
     }
 
-    public async Task<BaseResponse<LoginResponseDto>> Handle(LoginUserCommand request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<LoginResponseDto>> Handle(RefreshTokenCommand request, CancellationToken cancellationToken)
     {
         try
         {
-            // Find user by username or email
-            var user = await _unitOfWork.Users.GetByUsernameAsync(request.UsernameOrEmail);
-            
-            if (user == null)
+            // Validate the access token (without checking expiration)
+            var principal = _jwtService.ValidateToken(request.AccessToken);
+
+            if (principal == null)
             {
-                user = await _unitOfWork.Users.GetByEmailAsync(request.UsernameOrEmail);
+                return BaseResponse<LoginResponseDto>.FailureResponse(
+                    "Invalid token",
+                    new List<string> { "The provided access token is invalid" });
             }
 
-            // Validate user exists
+            // Extract user ID from the token
+            var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return BaseResponse<LoginResponseDto>.FailureResponse(
+                    "Invalid token",
+                    new List<string> { "User ID not found in token" });
+            }
+
+            // Get user from database
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+
             if (user == null)
             {
                 return BaseResponse<LoginResponseDto>.FailureResponse(
-                    "Invalid credentials",
-                    new List<string> { "Username/Email or password is incorrect" });
+                    "User not found",
+                    new List<string> { "The user associated with this token no longer exists" });
             }
 
             // Validate user is active
@@ -48,16 +62,6 @@ public class LoginUserCommandHandler : IRequestHandler<LoginUserCommand, BaseRes
                     new List<string> { "Your account has been deactivated. Please contact support." });
             }
 
-            // Verify password
-            bool isPasswordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash);
-            
-            if (!isPasswordValid)
-            {
-                return BaseResponse<LoginResponseDto>.FailureResponse(
-                    "Invalid credentials",
-                    new List<string> { "Username/Email or password is incorrect" });
-            }
-
             // Get role name if roleId exists
             string? roleName = null;
             if (user.RoleId.HasValue)
@@ -66,27 +70,27 @@ public class LoginUserCommandHandler : IRequestHandler<LoginUserCommand, BaseRes
                 roleName = role?.Name;
             }
 
-            // Generate JWT tokens
-            var accessToken = _jwtService.GenerateToken(user.UserId, user.Username, user.Email, roleName);
-            var refreshToken = _jwtService.GenerateRefreshToken();
+            // Generate new tokens
+            var newAccessToken = _jwtService.GenerateToken(user.UserId, user.Username, user.Email, roleName);
+            var newRefreshToken = _jwtService.GenerateRefreshToken();
             var accessTokenExpiresAt = _jwtService.GetTokenExpiration();
             var refreshTokenExpiresAt = _jwtService.GetRefreshTokenExpiration();
 
             // Map user to LoginUserDto using AutoMapper
             var loginUserDto = _mapper.Map<LoginUserDto>(user);
-            loginUserDto.Role = roleName; // Set role after mapping
+            loginUserDto.Role = roleName;
 
             // Create response
             var loginResponse = new LoginResponseDto
             {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
+                AccessToken = newAccessToken,
+                RefreshToken = newRefreshToken,
                 User = loginUserDto,
                 AccessTokenExpiresAt = accessTokenExpiresAt,
                 RefreshTokenExpiresAt = refreshTokenExpiresAt
             };
 
-            return BaseResponse<LoginResponseDto>.SuccessResponse(loginResponse, "Login successful");
+            return BaseResponse<LoginResponseDto>.SuccessResponse(loginResponse, "Token refreshed successfully");
         }
         catch (Exception ex)
         {
@@ -98,7 +102,7 @@ public class LoginUserCommandHandler : IRequestHandler<LoginUserCommand, BaseRes
             }
 
             return BaseResponse<LoginResponseDto>.FailureResponse(
-                "Login failed",
+                "Token refresh failed",
                 errors);
         }
     }

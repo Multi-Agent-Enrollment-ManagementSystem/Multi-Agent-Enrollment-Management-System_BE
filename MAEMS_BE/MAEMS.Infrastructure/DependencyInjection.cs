@@ -26,6 +26,12 @@ public static class DependencyInjection
 
         // Register JWT Service
         services.AddScoped<IJwtService, JwtService>();
+        
+        // Register Email Service
+        services.AddScoped<IEmailService, EmailService>();
+        
+        // Register Token Service
+        services.AddScoped<ITokenService, TokenService>();
 
         return services;
     }
