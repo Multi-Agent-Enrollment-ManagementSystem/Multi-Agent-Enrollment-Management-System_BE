@@ -423,6 +423,14 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+# ============================================
+# FIREBASE CREDENTIALS - IMPORTANT: DO NOT COMMIT!
+# ============================================
+firebase-adminsdk.json
+**/firebase-adminsdk*.json
+*.firebase-adminsdk*.json
+capstone-ddc58-firebase-adminsdk*.json
+
 # Application specific
 # Protect sensitive configuration files
 appsettings.json

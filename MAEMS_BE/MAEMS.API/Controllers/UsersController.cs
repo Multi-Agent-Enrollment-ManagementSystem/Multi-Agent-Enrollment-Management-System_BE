@@ -1,3 +1,4 @@
+using MAEMS.Application.Features.Users.Commands.GoogleLogin;
 using MAEMS.Application.Features.Users.Commands.LoginUser;
 using MAEMS.Application.Features.Users.Commands.RefreshToken;
 using MAEMS.Application.Features.Users.Commands.RegisterUser;
@@ -54,6 +55,24 @@ public class UsersController : ControllerBase
         if (!result.Success)
         {
             return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Login with Google account
+    /// </summary>
+    /// <param name="command">Google ID Token from Google Sign-In</param>
+    /// <returns>JWT access token, refresh token and user information</returns>
+    [HttpPost("google-login")]
+    public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return Unauthorized(result);
         }
 
         return Ok(result);
