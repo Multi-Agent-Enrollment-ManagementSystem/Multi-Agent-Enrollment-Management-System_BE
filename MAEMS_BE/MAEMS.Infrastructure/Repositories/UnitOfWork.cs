@@ -12,6 +12,7 @@ public class UnitOfWork : IUnitOfWork
     private IUserRepository? _userRepository;
     private IMajorRepository? _majorRepository;
     private IProgramRepository? _programRepository;
+    private ICampusRepository? _campusRepository;
 
     public UnitOfWork(postgresContext context)
     {
@@ -47,6 +48,14 @@ public class UnitOfWork : IUnitOfWork
         get
         {
             return _programRepository ??= new ProgramRepository(_context);
+        }
+    }
+
+    public ICampusRepository Campuses
+    {
+        get
+        {
+            return _campusRepository ??= new CampusRepository(_context);
         }
     }
 

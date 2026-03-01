@@ -6,6 +6,7 @@ public interface IUnitOfWork : IDisposable
     IUserRepository Users { get; }
     IMajorRepository Majors { get; }
     IProgramRepository Programs { get; }
+    ICampusRepository Campuses { get; }
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitTransactionAsync();

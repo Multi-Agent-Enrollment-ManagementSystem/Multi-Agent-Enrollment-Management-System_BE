@@ -1,4 +1,5 @@
 using MAEMS.Application.Features.Majors.Queries.GetActiveMajors;
+using MAEMS.Application.Features.Majors.Queries.GetActiveMajorsBasic;
 using MAEMS.Application.Features.Majors.Queries.GetAllMajors;
 using MAEMS.Application.Features.Majors.Queries.GetMajorById;
 using MediatR;
@@ -62,6 +63,24 @@ public class MajorsController : ControllerBase
     public async Task<IActionResult> GetActiveMajors()
     {
         var query = new GetActiveMajorsQuery();
+        var result = await _mediator.Send(query);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get basic info of active majors (MajorId, MajorCode, MajorName only)
+    /// </summary>
+    /// <returns>List of active majors with basic info</returns>
+    [HttpGet("active/basic")]
+    public async Task<IActionResult> GetActiveMajorsBasic()
+    {
+        var query = new GetActiveMajorsBasicQuery();
         var result = await _mediator.Send(query);
 
         if (!result.Success)

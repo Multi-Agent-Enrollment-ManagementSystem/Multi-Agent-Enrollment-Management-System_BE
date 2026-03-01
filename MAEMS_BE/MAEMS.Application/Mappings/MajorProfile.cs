@@ -9,5 +9,7 @@ public class MajorProfile : Profile
     public MajorProfile()
     {
         CreateMap<Major, MajorDto>().ReverseMap();
+        
+        CreateMap<Major, MajorBasicDto>();
     }
 }
