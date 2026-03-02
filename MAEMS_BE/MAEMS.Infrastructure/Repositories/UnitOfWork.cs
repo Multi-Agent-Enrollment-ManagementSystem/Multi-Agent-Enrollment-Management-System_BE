@@ -15,6 +15,7 @@ public class UnitOfWork : IUnitOfWork
     private ICampusRepository? _campusRepository;
     private IApplicantRepository? _applicantRepository;
     private IAdmissionTypeRepository? _admissionTypeRepository;
+    private IApplicationRepository? _applicationRepository;
 
     public UnitOfWork(postgresContext context)
     {
@@ -74,6 +75,14 @@ public class UnitOfWork : IUnitOfWork
         get
         {
             return _admissionTypeRepository ??= new AdmissionTypeRepository(_context);
+        }
+    }
+
+    public IApplicationRepository Applications
+    {
+        get
+        {
+            return _applicationRepository ??= new ApplicationRepository(_context);
         }
     }
 
