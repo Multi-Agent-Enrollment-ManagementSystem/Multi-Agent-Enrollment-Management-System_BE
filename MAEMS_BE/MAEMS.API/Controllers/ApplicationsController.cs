@@ -54,8 +54,7 @@ public class ApplicationsController : ControllerBase
                 ProgramId = request.ProgramId,
                 EnrollmentYearId = request.EnrollmentYearId,
                 CampusId = request.CampusId,
-                AdmissionTypeId = request.AdmissionTypeId,
-                Notes = request.Notes
+                AdmissionTypeId = request.AdmissionTypeId
             };
 
             var result = await _mediator.Send(command);

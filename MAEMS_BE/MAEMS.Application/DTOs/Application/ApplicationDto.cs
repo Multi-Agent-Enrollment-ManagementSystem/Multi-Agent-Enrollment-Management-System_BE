@@ -18,6 +18,5 @@ public class ApplicationDto
     public DateTime? LastUpdated { get; set; }
     public int? AssignedOfficerId { get; set; }
     public string? AssignedOfficerName { get; set; }
-    public string? Notes { get; set; }
     public bool? RequiresReview { get; set; }
 }
