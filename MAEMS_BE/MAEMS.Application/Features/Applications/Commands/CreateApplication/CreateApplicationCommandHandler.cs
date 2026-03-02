@@ -78,7 +78,6 @@ public class CreateApplicationCommandHandler : IRequestHandler<CreateApplication
                 CampusId = request.CampusId,
                 AdmissionTypeId = request.AdmissionTypeId,
                 Status = "draft", // Default status
-                Notes = request.Notes,
                 RequiresReview = false, // Default value
                 SubmittedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                 LastUpdated = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
