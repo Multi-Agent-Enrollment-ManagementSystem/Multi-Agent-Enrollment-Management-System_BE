@@ -2,6 +2,7 @@ using MAEMS.Application.Features.Programs.Queries.GetActivePrograms;
 using MAEMS.Application.Features.Programs.Queries.GetActiveProgramsBasic;
 using MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 using MAEMS.Application.Features.Programs.Queries.GetProgramById;
+using MAEMS.Application.Features.Programs.Queries.GetProgramsBasicByFilter;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -81,6 +82,26 @@ public class ProgramsController : ControllerBase
     public async Task<IActionResult> GetActiveProgramsBasic()
     {
         var query = new GetActiveProgramsBasicQuery();
+        var result = await _mediator.Send(query);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get programs basic info filtered by major id and/or search name
+    /// </summary>
+    /// <param name="majorId">Optional major ID to filter programs</param>
+    /// <param name="searchName">Optional search term to filter by program name</param>
+    /// <returns>List of programs with basic info matching the filters</returns>
+    [HttpGet("basic/filter")]
+    public async Task<IActionResult> GetProgramsBasicByFilter([FromQuery] int? majorId, [FromQuery] string? searchName)
+    {
+        var query = new GetProgramsBasicByFilterQuery(majorId, searchName);
         var result = await _mediator.Send(query);
 
         if (!result.Success)
