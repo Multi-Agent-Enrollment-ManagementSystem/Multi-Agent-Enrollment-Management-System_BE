@@ -1,0 +1,23 @@
+namespace MAEMS.Application.DTOs.Application;
+
+public class ApplicationDto
+{
+    public int ApplicationId { get; set; }
+    public int? ApplicantId { get; set; }
+    public string? ApplicantName { get; set; }
+    public int? ProgramId { get; set; }
+    public string? ProgramName { get; set; }
+    public int? EnrollmentYearId { get; set; }
+    public string? EnrollmentYear { get; set; }
+    public int? CampusId { get; set; }
+    public string? CampusName { get; set; }
+    public int? AdmissionTypeId { get; set; }
+    public string? AdmissionTypeName { get; set; }
+    public string? Status { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? LastUpdated { get; set; }
+    public int? AssignedOfficerId { get; set; }
+    public string? AssignedOfficerName { get; set; }
+    public string? Notes { get; set; }
+    public bool? RequiresReview { get; set; }
+}
