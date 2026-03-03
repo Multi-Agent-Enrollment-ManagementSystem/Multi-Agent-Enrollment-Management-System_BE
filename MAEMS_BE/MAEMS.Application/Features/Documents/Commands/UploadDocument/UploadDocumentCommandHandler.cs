@@ -55,53 +55,23 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 );
             }
 
-            // Check if document type already exists for this application
-            var existingDocument = await _unitOfWork.Documents.GetByApplicationIdAndTypeAsync(
-                request.ApplicationId, request.DocumentType);
-
-            string filePath;
+            // Upload file lên Firebase Storage — trả về public download URL
+            string downloadUrl;
             using (var stream = request.File.OpenReadStream())
             {
-                filePath = await _fileStorageService.UploadFileAsync(
-                    stream, 
-                    request.File.FileName, 
+                downloadUrl = await _fileStorageService.UploadFileAsync(
+                    stream,
+                    request.File.FileName,
                     $"applications/{request.ApplicationId}/documents"
                 );
             }
 
-            if (existingDocument != null)
-            {
-                // Update existing document
-                // Delete old file from storage
-                if (!string.IsNullOrEmpty(existingDocument.FilePath))
-                {
-                    await _fileStorageService.DeleteFileAsync(existingDocument.FilePath);
-                }
-
-                // Update existing document record
-                existingDocument.FilePath = filePath;
-                existingDocument.UploadedAt = DateTime.UtcNow;
-                existingDocument.FileName = request.File.FileName;
-                existingDocument.FileFormat = Path.GetExtension(request.File.FileName);
-                existingDocument.VerificationResult = "pending";
-                existingDocument.VerificationDetails = null;
-
-                await _unitOfWork.Documents.UpdateAsync(existingDocument);
-                await _unitOfWork.SaveChangesAsync();
-
-                var documentDto = _mapper.Map<DocumentDto>(existingDocument);
-                documentDto.DownloadUrl = await _fileStorageService.GetDownloadUrlAsync(filePath);
-
-                return BaseResponse<DocumentDto>.SuccessResponse(documentDto, "Document updated successfully");
-            }
-
-            // Create new document
+            // Tạo document mới — FilePath lưu public download URL
             var newDocument = new Domain.Entities.Document
             {
                 ApplicationId = request.ApplicationId,
-                DocumentType = request.DocumentType,
-                FilePath = filePath,
-                UploadedAt = DateTime.UtcNow,
+                FilePath = downloadUrl,
+                UploadedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                 FileName = request.File.FileName,
                 FileFormat = Path.GetExtension(request.File.FileName),
                 VerificationResult = "pending",
@@ -112,7 +82,6 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             await _unitOfWork.SaveChangesAsync();
 
             var responseDto = _mapper.Map<DocumentDto>(createdDocument);
-            responseDto.DownloadUrl = await _fileStorageService.GetDownloadUrlAsync(filePath);
 
             return BaseResponse<DocumentDto>.SuccessResponse(responseDto, "Document uploaded successfully");
         }

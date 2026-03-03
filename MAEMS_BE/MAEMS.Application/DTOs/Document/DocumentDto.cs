@@ -6,7 +6,6 @@ public class DocumentDto
     public int? ApplicationId { get; set; }
     public string? DocumentType { get; set; }
     public string? FilePath { get; set; }
-    public string? DownloadUrl { get; set; }
     public DateTime? UploadedAt { get; set; }
     public string? FileName { get; set; }
     public string? FileFormat { get; set; }
