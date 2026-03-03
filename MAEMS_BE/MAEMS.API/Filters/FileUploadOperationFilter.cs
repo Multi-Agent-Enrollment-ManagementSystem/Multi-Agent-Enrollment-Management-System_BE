@@ -26,7 +26,6 @@ public class FileUploadOperationFilter : IOperationFilter
                         Type = "object",
                         Properties = new Dictionary<string, OpenApiSchema>
                         {
-                            ["DocumentType"] = new OpenApiSchema { Type = "string" },
                             ["File"] = new OpenApiSchema { Type = "string", Format = "binary" }
                         }
                     }

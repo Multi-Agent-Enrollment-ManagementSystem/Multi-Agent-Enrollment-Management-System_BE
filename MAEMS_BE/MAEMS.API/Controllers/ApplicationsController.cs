@@ -78,7 +78,7 @@ public class ApplicationsController : ControllerBase
     /// Upload document for application (requires JWT authentication with role = applicant)
     /// </summary>
     /// <param name="id">Application ID</param>
-    /// <param name="request">Upload request containing document type and file</param>
+    /// <param name="request">Upload request containing file</param>
     /// <returns>Uploaded document information</returns>
     [HttpPost("{id}/documents")]
     [Authorize(Roles = "applicant")]
@@ -116,7 +116,6 @@ public class ApplicationsController : ControllerBase
             var command = new UploadDocumentCommand
             {
                 ApplicationId = id,
-                DocumentType = request.DocumentType,
                 File = request.File
             };
 

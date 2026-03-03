@@ -430,7 +430,7 @@ firebase-adminsdk.json
 **/firebase-adminsdk*.json
 *.firebase-adminsdk*.json
 capstone-ddc58-firebase-adminsdk*.json
-
+firebase-storage-adminsdk.json
 # Application specific
 # Protect sensitive configuration files
 appsettings.json
