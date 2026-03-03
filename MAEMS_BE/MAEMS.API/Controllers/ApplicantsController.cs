@@ -91,4 +91,21 @@ public class ApplicantsController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// Get applicant by id
+    /// </summary>
+    /// <param name="id">Applicant id</param>
+    /// <returns>Applicant profile</returns>
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetApplicantById(int id)
+    {
+        var query = new MAEMS.Application.Features.Applicants.Queries.GetApplicantById.GetApplicantByIdQuery(id);
+        var result = await _mediator.Send(query);
+        if (!result.Success)
+        {
+            return NotFound(result);
+        }
+        return Ok(result);
+    }
 }
