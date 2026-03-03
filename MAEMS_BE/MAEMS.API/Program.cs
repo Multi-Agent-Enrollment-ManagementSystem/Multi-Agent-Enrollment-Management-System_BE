@@ -1,9 +1,10 @@
-using MAEMS.Application;
+﻿using MAEMS.Application;
 using MAEMS.Infrastructure;
 using MAEMS.API.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using MAEMS.API.Filters;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,7 +15,7 @@ builder.Services.AddControllers();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 
-// Add JWT Authentication
+// JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
 
@@ -51,7 +52,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -86,29 +87,29 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+
+    // Support file uploads
+    c.OperationFilter<FileUploadOperationFilter>();
 });
+
+// XÓA DÒNG NÀY vì đã đăng ký trong DependencyInjection.cs:
+// builder.Services.AddTransient<IFileStorageService, FirebaseStorageService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-// Enable Swagger in all environments (including Production for Azure deployment)
+// Configure pipeline
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "MAEMS API v1");
-    c.RoutePrefix = "swagger"; // Set Swagger UI at /swagger
+    c.RoutePrefix = "swagger";
 });
 
-// Add Global Exception Handler
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-
 app.UseHttpsRedirection();
-
 app.UseCors("AllowAll");
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

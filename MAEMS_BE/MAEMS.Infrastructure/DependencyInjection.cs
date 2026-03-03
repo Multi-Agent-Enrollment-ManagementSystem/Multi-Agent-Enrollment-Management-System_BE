@@ -20,6 +20,13 @@ public static class DependencyInjection
         // Register Repositories
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IMajorRepository, MajorRepository>();
+        services.AddScoped<IProgramRepository, ProgramRepository>();
+        services.AddScoped<ICampusRepository, CampusRepository>();
+        services.AddScoped<IApplicantRepository, ApplicantRepository>();
+        services.AddScoped<IAdmissionTypeRepository, AdmissionTypeRepository>();
+        services.AddScoped<IApplicationRepository, ApplicationRepository>();
+        services.AddScoped<IDocumentRepository, DocumentRepository>();
         
         // Register Unit of Work
         services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -35,6 +42,9 @@ public static class DependencyInjection
 
         // Register Firebase Auth Service
         services.AddScoped<IFirebaseAuthService, FirebaseAuthService>();
+
+        // Register File Storage Service (Firebase implementation)
+        services.AddSingleton<MAEMS.Application.Interfaces.IFileStorageService, FirebaseStorageService>();
 
         return services;
     }
