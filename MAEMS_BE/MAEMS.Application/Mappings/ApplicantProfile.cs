@@ -10,5 +10,7 @@ public class ApplicantProfile : Profile
     {
         CreateMap<Applicant, ApplicantDto>().ReverseMap();
         CreateMap<CreateApplicantRequestDto, Applicant>();
+        CreateMap<UpdateApplicantRequestDto, Applicant>()
+            .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
     }
 }

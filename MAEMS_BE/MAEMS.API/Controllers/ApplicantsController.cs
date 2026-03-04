@@ -1,5 +1,6 @@
 using MAEMS.Application.DTOs.Applicant;
 using MAEMS.Application.Features.Applicants.Commands.CreateApplicant;
+using MAEMS.Application.Features.Applicants.Commands.UpdateApplicant;
 using MAEMS.Application.Features.Applicants.Queries.GetMyApplicant;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -87,6 +88,51 @@ public class ApplicantsController : ControllerBase
         if (!result.Success)
         {
             return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Update current user's applicant profile (requires JWT authentication with role = applicant)
+    /// </summary>
+    /// <param name="request">Fields to update (only provided fields will be updated)</param>
+    /// <returns>Updated applicant profile</returns>
+    [HttpPatch("me")]
+    [Authorize(Roles = "applicant")]
+    public async Task<IActionResult> UpdateMyApplicant([FromBody] UpdateApplicantRequestDto request)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+        {
+            return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+        }
+
+        var command = new UpdateApplicantCommand
+        {
+            UserId = userId,
+            FullName = request.FullName,
+            DateOfBirth = request.DateOfBirth,
+            Gender = request.Gender,
+            HighSchoolName = request.HighSchoolName,
+            HighSchoolDistrict = request.HighSchoolDistrict,
+            HighSchoolProvince = request.HighSchoolProvince,
+            GraduationYear = request.GraduationYear,
+            IdIssueNumber = request.IdIssueNumber,
+            IdIssueDate = request.IdIssueDate,
+            IdIssuePlace = request.IdIssuePlace,
+            ContactName = request.ContactName,
+            ContactAddress = request.ContactAddress,
+            ContactPhone = request.ContactPhone,
+            ContactEmail = request.ContactEmail,
+            AllowShare = request.AllowShare
+        };
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return NotFound(result);
         }
 
         return Ok(result);
