@@ -6,7 +6,7 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Applicants.Queries.GetMyApplicant;
 
-public class GetMyApplicantQueryHandler : IRequestHandler<GetMyApplicantQuery, BaseResponse<MyApplicantDto>>
+public class GetMyApplicantQueryHandler : IRequestHandler<GetMyApplicantQuery, BaseResponse<ApplicantDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
@@ -17,15 +17,30 @@ public class GetMyApplicantQueryHandler : IRequestHandler<GetMyApplicantQuery, B
         _mapper = mapper;
     }
 
-    public async Task<BaseResponse<MyApplicantDto>> Handle(GetMyApplicantQuery request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<ApplicantDto>> Handle(GetMyApplicantQuery request, CancellationToken cancellationToken)
     {
-        var applicant = await _unitOfWork.Applicants.GetByUserIdAsync(request.UserId);
-        if (applicant == null)
+        try
         {
-            return BaseResponse<MyApplicantDto>.FailureResponse("Applicant not found", new() { "No applicant profile found for this user" });
-        }
+            var applicant = await _unitOfWork.Applicants.GetByUserIdAsync(request.UserId);
 
-        var dto = _mapper.Map<MyApplicantDto>(applicant);
-        return BaseResponse<MyApplicantDto>.SuccessResponse(dto, "Applicant profile retrieved successfully");
+            if (applicant == null)
+            {
+                return BaseResponse<ApplicantDto>.FailureResponse(
+                    "Applicant not found",
+                    new List<string> { "No applicant profile found for this user" }
+                );
+            }
+
+            var applicantDto = _mapper.Map<ApplicantDto>(applicant);
+            
+            return BaseResponse<ApplicantDto>.SuccessResponse(applicantDto, "Applicant retrieved successfully");
+        }
+        catch (Exception ex)
+        {
+            return BaseResponse<ApplicantDto>.FailureResponse(
+                "Error retrieving applicant",
+                new List<string> { ex.Message }
+            );
+        }
     }
 }
