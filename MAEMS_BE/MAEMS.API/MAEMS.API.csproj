@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MAEMS.Application\MAEMS.Application.csproj" />
     <ProjectReference Include="..\MAEMS.Infrastructure\MAEMS.Infrastructure.csproj" />
+    <ProjectReference Include="..\MAEMS.MultiAgent\MAEMS.MultiAgent.csproj" />
   </ItemGroup>
 
 </Project>

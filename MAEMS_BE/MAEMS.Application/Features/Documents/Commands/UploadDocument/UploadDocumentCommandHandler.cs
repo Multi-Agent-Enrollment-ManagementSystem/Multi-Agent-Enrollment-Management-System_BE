@@ -13,20 +13,24 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IDocumentIntakeAgent _documentIntakeAgent;
     private readonly IMapper _mapper;
     private readonly ILogger<UploadDocumentCommandHandler> _logger;
     
-    private readonly string[] _allowedExtensions = { ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx" };
+    // Supported: ảnh gửi trực tiếp qua images[], PDF gửi qua image_url data URI
+    private readonly string[] _allowedExtensions = { ".pdf", ".jpg", ".jpeg", ".png" };
     private const long _maxFileSize = 10 * 1024 * 1024; // 10MB
 
     public UploadDocumentCommandHandler(
         IUnitOfWork unitOfWork,
         IFileStorageService fileStorageService,
+        IDocumentIntakeAgent documentIntakeAgent,
         IMapper mapper,
         ILogger<UploadDocumentCommandHandler> logger)
     {
         _unitOfWork = unitOfWork;
         _fileStorageService = fileStorageService;
+        _documentIntakeAgent = documentIntakeAgent;
         _mapper = mapper;
         _logger = logger;
     }
@@ -45,7 +49,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 );
             }
 
-            // Validate file
+            // Validate file format & size
             var validationResult = ValidateFile(request.File);
             if (!validationResult.IsValid)
             {
@@ -55,7 +59,36 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 );
             }
 
-            // Upload file lên Firebase Storage — trả về public download URL
+            // ── LLM Quality Check (Application Intake Agent) ────────────────
+            _logger.LogInformation(
+                "Sending file '{FileName}' to DocumentIntakeAgent for quality check (ApplicationId={ApplicationId})",
+                request.File.FileName, request.ApplicationId);
+
+            var qualityResult = await _documentIntakeAgent.CheckDocumentQualityAsync(
+                request.File, cancellationToken);
+
+            if (!qualityResult.PassedQualityCheck)
+            {
+                _logger.LogWarning(
+                    "Document quality check failed for '{FileName}' (ApplicationId={ApplicationId}). Issues: {Issues}",
+                    request.File.FileName, request.ApplicationId,
+                    string.Join("; ", qualityResult.Issues));
+
+                var errors = qualityResult.Issues.Count > 0
+                    ? qualityResult.Issues
+                    : new List<string> { "Document did not pass quality check" };
+
+                return BaseResponse<DocumentDto>.FailureResponse(
+                    "Document quality check failed",
+                    errors
+                );
+            }
+
+            _logger.LogInformation(
+                "Document quality check passed for '{FileName}'. Type='{DocumentType}', Confidence={Confidence:P0}",
+                request.File.FileName, qualityResult.DocumentType, qualityResult.Confidence);
+
+            // ── Upload file to Firebase Storage ─────────────────────────────
             string downloadUrl;
             using (var stream = request.File.OpenReadStream())
             {
@@ -74,6 +107,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 UploadedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                 FileName = request.File.FileName,
                 FileFormat = Path.GetExtension(request.File.FileName),
+                DocumentType = qualityResult.DocumentType,
                 VerificationResult = "pending",
                 VerificationDetails = null
             };
