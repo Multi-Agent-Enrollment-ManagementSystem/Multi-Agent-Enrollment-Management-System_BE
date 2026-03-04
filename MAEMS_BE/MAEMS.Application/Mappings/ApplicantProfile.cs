@@ -12,6 +12,5 @@ public class ApplicantProfile : Profile
         CreateMap<CreateApplicantRequestDto, Applicant>();
         CreateMap<UpdateApplicantRequestDto, Applicant>()
             .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
-        CreateMap<Applicant, MyApplicantDto>();
     }
 }

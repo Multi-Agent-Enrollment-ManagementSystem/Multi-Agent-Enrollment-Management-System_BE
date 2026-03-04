@@ -28,14 +28,21 @@ public class ApplicantsController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetMyApplicant()
     {
-        // Lấy userId từ claim (giả sử claim name là "userId")
+        // Lấy userId từ JWT token
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
         }
 
-        var result = await _mediator.Send(new GetMyApplicantQuery(userId));
+        var query = new GetMyApplicantQuery(userId);
+        var result = await _mediator.Send(query);
+
+        if (!result.Success)
+        {
+            return NotFound(result);
+        }
+
         return Ok(result);
     }
 
