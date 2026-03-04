@@ -1,5 +1,6 @@
 ﻿using MAEMS.Application;
 using MAEMS.Infrastructure;
+using MAEMS.MultiAgent;
 using MAEMS.API.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -14,6 +15,7 @@ builder.Services.AddControllers();
 // Add Clean Architecture layers
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddMultiAgentServices(builder.Configuration);
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
