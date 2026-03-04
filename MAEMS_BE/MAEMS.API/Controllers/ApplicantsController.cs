@@ -1,6 +1,7 @@
 using MAEMS.Application.DTOs.Applicant;
 using MAEMS.Application.Features.Applicants.Commands.CreateApplicant;
 using MAEMS.Application.Features.Applicants.Commands.UpdateApplicant;
+using MAEMS.Application.Features.Applicants.Queries.GetAllApplicants;
 using MAEMS.Application.Features.Applicants.Queries.GetMyApplicant;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -145,6 +146,18 @@ public class ApplicantsController : ControllerBase
         {
             return NotFound(result);
         }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get all applicants (requires JWT authentication with role = officer or admin)
+    /// </summary>
+    /// <returns>List of applicants</returns>
+    [HttpGet]
+    [Authorize(Roles = "officer,admin")]
+    public async Task<IActionResult> GetAllApplicants()
+    {
+        var result = await _mediator.Send(new GetAllApplicantsQuery());
         return Ok(result);
     }
 }
