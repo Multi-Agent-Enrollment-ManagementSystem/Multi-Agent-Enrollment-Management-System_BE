@@ -1,0 +1,325 @@
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using MAEMS.Application.Interfaces;
+using MAEMS.Domain.Entities;
+using MAEMS.Domain.Interfaces;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace MAEMS.MultiAgent.Agents;
+
+/// <summary>
+/// Eligibility Evaluation Agent — kiểm tra hồ sơ có đủ loại tài liệu theo admission type,
+/// sau đó nhận xét chất lượng hồ sơ. Lưu kết quả vào Application.Notes và RequiresReview.
+/// Được gọi nội bộ bởi DocumentVerificationAgent sau khi verification hoàn tất.
+/// </summary>
+public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
+{
+    private readonly HttpClient _httpClient;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<EligibilityEvaluationAgent> _logger;
+    private readonly string _apiUrl;
+    private readonly string _apiKey;
+    private readonly string _modelName;
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private static readonly JsonSerializerOptions DeserializerOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true
+    };
+
+    public EligibilityEvaluationAgent(
+        HttpClient httpClient,
+        IServiceScopeFactory scopeFactory,
+        IConfiguration configuration,
+        ILogger<EligibilityEvaluationAgent> logger)
+    {
+        _httpClient = httpClient;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+
+        _apiUrl = configuration["Ollama:ApiUrl"]
+            ?? throw new InvalidOperationException("Ollama:ApiUrl is not configured");
+        _apiKey = configuration["Ollama:ApiKey"]
+            ?? throw new InvalidOperationException("Ollama:ApiKey is not configured");
+        _modelName = configuration["Ollama:ModelName"]
+            ?? throw new InvalidOperationException("Ollama:ModelName is not configured");
+    }
+
+    /// <inheritdoc />
+    public async Task EvaluateAsync(int applicationId, List<string> verificationNotes)
+    {
+        _logger.LogInformation(
+            "EligibilityEvaluationAgent: Starting evaluation for ApplicationId={ApplicationId}",
+            applicationId);
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        try
+        {
+            // ── Load application ──────────────────────────────────────────
+            var application = await unitOfWork.Applications.GetByIdAsync(applicationId);
+            if (application == null)
+            {
+                _logger.LogWarning(
+                    "EligibilityEvaluationAgent: ApplicationId={ApplicationId} not found, aborting.",
+                    applicationId);
+                return;
+            }
+
+            // ── Load admission type (required document list) ──────────────
+            AdmissionType? admissionType = null;
+            if (application.AdmissionTypeId.HasValue)
+                admissionType = await unitOfWork.AdmissionTypes.GetByIdAsync(application.AdmissionTypeId.Value);
+
+            var requiredDocTypes = ParseRequiredDocumentTypes(admissionType?.RequiredDocumentList);
+
+            // ── Load applicant profile ────────────────────────────────────
+            var applicant = application.ApplicantId.HasValue
+                ? await unitOfWork.Applicants.GetByIdAsync(application.ApplicantId.Value)
+                : null;
+
+            var applicantJson = applicant != null
+                ? BuildApplicantJson(applicant)
+                : "{}";
+
+            // ── Load submitted & verified document types ──────────────────
+            var documents = (await unitOfWork.Documents.GetByApplicationIdAsync(applicationId)).ToList();
+            var submittedDocTypes = documents
+                .Where(d => !string.IsNullOrWhiteSpace(d.DocumentType))
+                .Select(d => d.DocumentType!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _logger.LogInformation(
+                "EligibilityEvaluationAgent: Required={Required} | Submitted={Submitted} for ApplicationId={ApplicationId}",
+                string.Join(",", requiredDocTypes),
+                string.Join(",", submittedDocTypes),
+                applicationId);
+
+            // ── Call LLM ──────────────────────────────────────────────────
+            var responseBody = await CallOllamaAsync(requiredDocTypes, submittedDocTypes, applicantJson, applicationId);
+            var eligibilityResult = ParseLlmResponse(responseBody, applicationId);
+
+            // ── Determine if RequiresReview ───────────────────────────────
+            var anyDocRejected = documents.Any(d =>
+                string.Equals(d.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase));
+
+            var eligibilityRejected = string.Equals(
+                eligibilityResult.Result, "rejected", StringComparison.OrdinalIgnoreCase);
+
+            var requiresReview = anyDocRejected || eligibilityRejected;
+
+            // ── Build Notes (VerificationAgent details + EligibilityAgent details) ──
+            var notesParts = new List<string>();
+
+            if (verificationNotes.Count > 0)
+            {
+                notesParts.Add("[Document Verification]");
+                notesParts.AddRange(verificationNotes);
+            }
+
+            if (!string.IsNullOrWhiteSpace(eligibilityResult.Details))
+            {
+                notesParts.Add("[Eligibility Evaluation]");
+                notesParts.Add(eligibilityResult.Details);
+            }
+
+            var notes = notesParts.Count > 0
+                ? string.Join("\n", notesParts)
+                : null;
+
+            // ── Persist to Application ────────────────────────────────────
+            application.RequiresReview = requiresReview;
+            application.Notes         = notes;
+            application.LastUpdated   = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+            await unitOfWork.Applications.UpdateAsync(application);
+            await unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "EligibilityEvaluationAgent: ApplicationId={ApplicationId} → Result={Result} | RequiresReview={RequiresReview}",
+                applicationId, eligibilityResult.Result, requiresReview);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "EligibilityEvaluationAgent: Unhandled error for ApplicationId={ApplicationId}",
+                applicationId);
+        }
+    }
+
+    // ── Call Ollama ───────────────────────────────────────────────────────────
+
+    private async Task<string> CallOllamaAsync(
+        List<string> requiredDocTypes,
+        List<string> submittedDocTypes,
+        string applicantJson,
+        int applicationId)
+    {
+        var userPrompt =
+            $"[REQUIRED_DOCUMENT_TYPES]\n{string.Join(", ", requiredDocTypes.DefaultIfEmpty("(none specified)"))}\n\n" +
+            $"[SUBMITTED_DOCUMENT_TYPES]\n{string.Join(", ", submittedDocTypes.DefaultIfEmpty("(none)"))}\n\n" +
+            $"[APPLICANT_PROFILE]\n{applicantJson}\n\n" +
+            "Please evaluate the applicant's eligibility.";
+
+        var requestBody = new OllamaChatRequest
+        {
+            Model  = _modelName,
+            Stream = false,
+            Messages =
+            [
+                new OllamaMessage
+                {
+                    Role    = "system",
+                    Content = EligibilityEvaluationAgentPrompts.Evaluation
+                },
+                new OllamaMessage
+                {
+                    Role    = "user",
+                    Content = userPrompt
+                }
+            ]
+        };
+
+        var json = JsonSerializer.Serialize(requestBody, SerializerOptions);
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _apiUrl);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+        httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
+
+        using var response = await _httpClient.SendAsync(httpRequest);
+        var responseBody = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"Ollama API error {(int)response.StatusCode}: {responseBody}",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
+
+        _logger.LogDebug(
+            "EligibilityEvaluationAgent: Raw LLM response for ApplicationId={ApplicationId} — {Response}",
+            applicationId, responseBody);
+
+        return responseBody;
+    }
+
+    // ── Parse LLM response ────────────────────────────────────────────────────
+
+    private EligibilityEvaluationResult ParseLlmResponse(string responseBody, int applicationId)
+    {
+        try
+        {
+            var envelope = JsonSerializer.Deserialize<OllamaChatResponse>(responseBody, DeserializerOptions)
+                ?? throw new InvalidOperationException("Ollama response could not be deserialized.");
+
+            var content = envelope.Message?.Content
+                ?? envelope.Choices?.FirstOrDefault()?.Message?.Content;
+
+            if (string.IsNullOrWhiteSpace(content))
+                throw new InvalidOperationException("LLM returned an empty content field.");
+
+            content = StripMarkdownFences(content);
+
+            var llmResult = JsonSerializer.Deserialize<LlmEligibilityResponse>(content, DeserializerOptions)
+                ?? throw new InvalidOperationException("LLM inner JSON could not be deserialized.");
+
+            var result = string.Equals(llmResult.Result, "passed", StringComparison.OrdinalIgnoreCase)
+                ? "passed"
+                : "rejected";
+
+            return new EligibilityEvaluationResult
+            {
+                Result  = result,
+                Details = llmResult.Details
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "EligibilityEvaluationAgent: Failed to parse LLM response for ApplicationId={ApplicationId}. Body: {Body}",
+                applicationId, responseBody);
+
+            throw new InvalidOperationException(
+                $"Failed to parse LLM eligibility response: {ex.Message}", ex);
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Parse RequiredDocumentList string (comma-separated hoặc JSON array) thành List&lt;string&gt;.
+    /// </summary>
+    private static List<string> ParseRequiredDocumentTypes(string? requiredDocumentList)
+    {
+        if (string.IsNullOrWhiteSpace(requiredDocumentList))
+            return [];
+
+        var trimmed = requiredDocumentList.Trim();
+
+        // Thử parse JSON array trước
+        if (trimmed.StartsWith('['))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<List<string>>(trimmed);
+                if (parsed != null)
+                    return parsed.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            }
+            catch { /* fall through to comma-split */ }
+        }
+
+        // Comma-separated fallback
+        return trimmed
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+    }
+
+    private static string BuildApplicantJson(MAEMS.Domain.Entities.Applicant applicant)
+    {
+        var data = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["full_name"]            = applicant.FullName,
+            ["date_of_birth"]        = applicant.DateOfBirth?.ToString("yyyy-MM-dd"),
+            ["gender"]               = applicant.Gender,
+            ["high_school_name"]     = applicant.HighSchoolName,
+            ["high_school_province"] = applicant.HighSchoolProvince,
+            ["graduation_year"]      = applicant.GraduationYear
+        };
+
+        var filtered = data
+            .Where(kv => kv.Value is not null && kv.Value.ToString() != string.Empty)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+        return JsonSerializer.Serialize(filtered, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        });
+    }
+
+    private static string StripMarkdownFences(string content)
+    {
+        var trimmed = content.Trim();
+        if (trimmed.StartsWith("```"))
+        {
+            var firstNewline = trimmed.IndexOf('\n');
+            if (firstNewline >= 0)
+                trimmed = trimmed[(firstNewline + 1)..];
+            if (trimmed.EndsWith("```"))
+                trimmed = trimmed[..^3].TrimEnd();
+        }
+        return trimmed.Trim();
+    }
+}

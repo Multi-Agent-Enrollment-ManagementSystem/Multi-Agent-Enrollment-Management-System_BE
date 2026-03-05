@@ -8,6 +8,7 @@ public class ApplicationProfile : Profile
 {
     public ApplicationProfile()
     {
+        CreateMap<MAEMS.Domain.Entities.Application, ApplicationDto>();
         CreateMap<DomainApplication, ApplicationDto>().ReverseMap();
         CreateMap<DomainApplication, ApplicationBasicDto>();
         CreateMap<CreateApplicationRequestDto, DomainApplication>();
