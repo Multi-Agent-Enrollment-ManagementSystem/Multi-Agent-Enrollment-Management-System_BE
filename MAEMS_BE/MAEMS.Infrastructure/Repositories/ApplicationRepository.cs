@@ -1,4 +1,5 @@
-﻿using MAEMS.Domain.Interfaces;
+﻿using MAEMS.Domain.Entities;
+using MAEMS.Domain.Interfaces;
 using MAEMS.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
@@ -9,8 +10,11 @@ namespace MAEMS.Infrastructure.Repositories;
 
 public class ApplicationRepository : BaseRepository, IApplicationRepository
 {
+    private readonly postgresContext _context;
+
     public ApplicationRepository(postgresContext context) : base(context)
     {
+        _context = context;
     }
 
     public async Task<DomainApplication?> GetByIdAsync(int id)
@@ -219,6 +223,40 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
         return domainApplications.Any(predicate.Compile());
     }
 
+    public async Task<IEnumerable<MAEMS.Domain.Entities.Application>> GetAllByApplicantIdAsync(int applicantId)
+    {
+        var infraApps = await _context.Applications
+            .Include(a => a.Program)
+            .Include(a => a.Campus)
+            .Include(a => a.Applicant)
+            .Include(a => a.AdmissionType)
+            .Include(a => a.AssignedOfficer)
+            .Include(a => a.EnrollmentYear)
+            .Where(a => a.ApplicantId == applicantId)
+            .ToListAsync();
+
+        return infraApps.Select(a => new MAEMS.Domain.Entities.Application
+        {
+            ApplicationId = a.ApplicationId,
+            ProgramId = a.ProgramId,
+            EnrollmentYearId = a.EnrollmentYearId,
+            CampusId = a.CampusId,
+            AdmissionTypeId = a.AdmissionTypeId,
+            Status = a.Status,
+            SubmittedAt = a.SubmittedAt,
+            LastUpdated = a.LastUpdated,
+            AssignedOfficerId = a.AssignedOfficerId,
+            Notes = a.Notes,
+            RequiresReview = a.RequiresReview,
+            // Lấy tên từ navigation property
+            ProgramName = a.Program?.ProgramName,
+            CampusName = a.Campus?.Name,
+            ApplicantName = a.Applicant?.FullName,
+            AdmissionTypeName = a.AdmissionType?.AdmissionTypeName,
+            AssignedOfficerName = a.AssignedOfficer?.Username,
+            EnrollmentYear = a.EnrollmentYear?.Year // hoặc .Year.ToString() nếu có
+        }).ToList();
+    }
     private static DomainApplication MapToDomain(InfraApplication infraApplication)
     {
         return new DomainApplication
