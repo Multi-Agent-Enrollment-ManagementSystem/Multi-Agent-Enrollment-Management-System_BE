@@ -8,6 +8,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
 
 namespace MAEMS.API.Controllers;
 
@@ -145,6 +146,14 @@ public class ApplicationsController : ControllerBase
         var result = await _mediator.Send(new GetMyApplicationQuery(userId));
         return Ok(result);
     }
+    [HttpGet("all")]
+    [Authorize(Roles = "officer,admin")]
+    public async Task<IActionResult> GetAllFullApplications()
+    {
+         var result = await _mediator.Send(new GetAllFullApplicationsQuery());
+         return Ok(result);
+    }
+    
 }
 
  
