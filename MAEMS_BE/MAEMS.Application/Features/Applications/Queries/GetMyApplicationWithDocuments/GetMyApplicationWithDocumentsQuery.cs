@@ -4,8 +4,13 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Applications.Queries.GetMyApplicationWithDocuments;
 
-public class GetMyApplicationWithDocumentsQuery : IRequest<BaseResponse<List<ApplicationWithDocumentsDto>>>
+public class GetMyApplicationWithDocumentsQuery : IRequest<BaseResponse<ApplicationWithDocumentsDto>>
 {
     public int UserId { get; set; }
-    public GetMyApplicationWithDocumentsQuery(int userId) => UserId = userId;
+    public int ApplicationId { get; set; }
+    public GetMyApplicationWithDocumentsQuery(int userId, int applicationId)
+    {
+        UserId = userId;
+        ApplicationId = applicationId;
+    }
 }

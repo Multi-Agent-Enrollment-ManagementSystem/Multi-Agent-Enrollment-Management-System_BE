@@ -203,7 +203,7 @@ public class ApplicationsController : ControllerBase
             return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
         }
     }
-}
+
     [HttpGet("{id}")]
     [Authorize(Roles = "officer,admin")]
     public async Task<IActionResult> GetApplicationWithDocuments(int id)
@@ -213,18 +213,28 @@ public class ApplicationsController : ControllerBase
             return NotFound(result);
         return Ok(result);
     }
-    [HttpGet("me/with-documents")]
+    [HttpGet("me/{id}/with-documents")]
     [Authorize(Roles = "applicant")]
-    public async Task<IActionResult> GetMyApplicationsWithDocuments()
+    public async Task<IActionResult> GetMyApplicationWithDocuments(int id)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             return Unauthorized();
 
-        var result = await _mediator.Send(new GetMyApplicationWithDocumentsQuery(userId));
+        var result = await _mediator.Send(new GetMyApplicationWithDocumentsQuery(userId, id));
+
+        if (!result.Success)
+        {
+            if (result.Message == "Application not found")
+                return NotFound(result);
+
+            if (result.Message == "Forbidden")
+                return StatusCode(403, result);
+
+            return BadRequest(result);
+        }
+
         return Ok(result);
     }
 
 }
-
- 
