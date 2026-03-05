@@ -8,7 +8,8 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
+using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
+using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
 
 namespace MAEMS.API.Controllers;
 
@@ -153,7 +154,16 @@ public class ApplicationsController : ControllerBase
          var result = await _mediator.Send(new GetAllFullApplicationsQuery());
          return Ok(result);
     }
-    
+    [HttpGet("{id}")]
+    [Authorize(Roles = "officer,admin")]
+    public async Task<IActionResult> GetApplicationWithDocuments(int id)
+    {
+        var result = await _mediator.Send(new GetApplicationWithDocumentsQuery(id));
+        if (!result.Success)
+            return NotFound(result);
+        return Ok(result);
+    }
+
 }
 
  
