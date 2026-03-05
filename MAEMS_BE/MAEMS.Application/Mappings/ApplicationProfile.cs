@@ -10,5 +10,6 @@ public class ApplicationProfile : Profile
     {
         CreateMap<MAEMS.Domain.Entities.Application, MyApplicationDto>();
         CreateMap<MAEMS.Domain.Entities.Application, FullApplicationDto>();
+        CreateMap<MAEMS.Domain.Entities.Application, ApplicationWithDocumentsDto>();
     }
 }
