@@ -2,6 +2,7 @@ namespace MAEMS.Domain.Interfaces;
 
 public interface IApplicationRepository : IGenericRepository<Entities.Application>
 {
+    Task<IEnumerable<Entities.Application>> GetAllByApplicantIdAsync(int applicantId);
     Task<Entities.Application?> GetByApplicantIdAsync(int applicantId);
     Task<IEnumerable<Entities.Application>> GetByStatusAsync(string status);
     Task<IEnumerable<Entities.Application>> GetByProgramIdAsync(int programId);
