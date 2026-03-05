@@ -14,15 +14,18 @@ namespace MAEMS.MultiAgent.Agents;
 /// Document Verification Agent — tải từng document từ Firebase, gửi kèm thông tin applicant
 /// cho Ollama LLM để cross-check, rồi lưu kết quả vào DB.
 /// <para>
-/// Chạy hoàn toàn độc lập (fire-and-forget) — caller không cần await.
-/// Dùng <see cref="IServiceScopeFactory"/> để tạo scope riêng, tránh conflict với
-/// DbContext của request gốc đã được dispose.
+/// Sau khi tất cả documents được verify:
+/// <list type="bullet">
+///   <item>Chuyển <c>Application.Status</c> → <c>"under_review"</c>.</item>
+///   <item>Gọi <see cref="IEligibilityEvaluationAgent"/> để đánh giá điều kiện hồ sơ.</item>
+/// </list>
 /// </para>
 /// </summary>
 public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
 {
     private readonly HttpClient _httpClient;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IEligibilityEvaluationAgent _eligibilityAgent;
     private readonly ILogger<DocumentVerificationAgent> _logger;
     private readonly DocumentIntakeAgentPdfConverter _pdfConverter;
     private readonly string _apiUrl;
@@ -50,11 +53,13 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
     public DocumentVerificationAgent(
         HttpClient httpClient,
         IServiceScopeFactory scopeFactory,
+        IEligibilityEvaluationAgent eligibilityAgent,
         IConfiguration configuration,
         ILogger<DocumentVerificationAgent> logger)
     {
         _httpClient = httpClient;
         _scopeFactory = scopeFactory;
+        _eligibilityAgent = eligibilityAgent;
         _logger = logger;
         _pdfConverter = new DocumentIntakeAgentPdfConverter(logger);
 
@@ -67,13 +72,8 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    /// Fire-and-forget: caller calls without await.
-    /// Internally uses Task.Run so the background work survives the request pipeline.
-    /// </remarks>
     public Task VerifyApplicationDocumentsAsync(int applicationId)
     {
-        // Detach from the caller's synchronization context entirely
         _ = Task.Run(() => RunVerificationAsync(applicationId));
         return Task.CompletedTask;
     }
@@ -86,7 +86,6 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             "DocumentVerificationAgent: Starting verification for ApplicationId={ApplicationId}",
             applicationId);
 
-        // Create a fresh DI scope — the original request scope is already gone
         await using var scope = _scopeFactory.CreateAsyncScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
@@ -116,7 +115,7 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
 
             var applicantJson = BuildApplicantJson(applicant);
 
-            // ── Load all documents for this application ───────────────────
+            // ── Load all documents ────────────────────────────────────────
             var documents = (await unitOfWork.Documents.GetByApplicationIdAsync(applicationId)).ToList();
 
             if (documents.Count == 0)
@@ -131,20 +130,39 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
                 "DocumentVerificationAgent: Verifying {Count} document(s) for ApplicationId={ApplicationId}",
                 documents.Count, applicationId);
 
-            // ── Verify each document sequentially ────────────────────────
+            // ── Verify each document, collect rejected details ────────────
+            var rejectedNotes = new List<string>();
+
             foreach (var document in documents)
             {
                 await VerifySingleDocumentAsync(document, applicantJson, unitOfWork);
+
+                if (string.Equals(document.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(document.VerificationDetails))
+                {
+                    rejectedNotes.Add($"[{document.DocumentType ?? document.FileName}] {document.VerificationDetails}");
+                }
             }
 
+            // ── Set application status → "under_review" ───────────────────
+            application.Status      = "under_review";
+            application.LastUpdated = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+
+            await unitOfWork.Applications.UpdateAsync(application);
+            await unitOfWork.SaveChangesAsync();
+
             _logger.LogInformation(
-                "DocumentVerificationAgent: Verification complete for ApplicationId={ApplicationId}",
+                "DocumentVerificationAgent: ApplicationId={ApplicationId} status → under_review. Handing off to EligibilityEvaluationAgent.",
                 applicationId);
+
+            // ── Hand off to EligibilityEvaluationAgent ────────────────────
+            // EligibilityAgent creates its own scope — no dependency on this scope
+            await _eligibilityAgent.EvaluateAsync(applicationId, rejectedNotes);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex,
-                "DocumentVerificationAgent: Unhandled error during verification for ApplicationId={ApplicationId}",
+                "DocumentVerificationAgent: Unhandled error for ApplicationId={ApplicationId}",
                 applicationId);
         }
     }
@@ -170,19 +188,11 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
                 "DocumentVerificationAgent: Verifying DocumentId={DocumentId} '{FileName}' (Type={Type})",
                 document.DocumentId, document.FileName, document.DocumentType);
 
-            // Step 1: Download bytes from Firebase public URL
-            var fileBytes = await DownloadBytesAsync(document.FilePath, document.FileName);
-
-            // Step 2: Convert bytes → base64 image list (handles images and PDFs)
-            var imageBase64List = PrepareImagesFromBytes(fileBytes, document.FileName);
-
-            // Step 3: Call Ollama with applicant profile + document images
-            var responseBody = await CallOllamaAsync(imageBase64List, applicantJson, document);
-
-            // Step 4: Parse LLM JSON response
+            var fileBytes        = await DownloadBytesAsync(document.FilePath, document.FileName);
+            var imageBase64List  = PrepareImagesFromBytes(fileBytes, document.FileName);
+            var responseBody     = await CallOllamaAsync(imageBase64List, applicantJson, document);
             var verificationResult = ParseLlmResponse(responseBody, document.DocumentId);
 
-            // Step 5: Persist result to DB
             document.VerificationResult  = verificationResult.Result;
             document.VerificationDetails = verificationResult.Details;
 
@@ -200,8 +210,6 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             _logger.LogError(ex,
                 "DocumentVerificationAgent: Error verifying DocumentId={DocumentId}, marking as 'error'",
                 document.DocumentId);
-
-            // Mark as error in DB so it's visible — do NOT crash the loop for remaining documents
             try
             {
                 document.VerificationResult  = "error";
@@ -218,27 +226,19 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
         }
     }
 
-    // ── Step 1: Download bytes from Firebase public URL ───────────────────────
+    // ── Step 1: Download bytes ────────────────────────────────────────────────
 
     private async Task<byte[]> DownloadBytesAsync(string url, string fileName)
     {
-        // Firebase ?alt=media URL is public — no Authorization header needed
         using var response = await _httpClient.GetAsync(url);
 
         if (!response.IsSuccessStatusCode)
-        {
             throw new HttpRequestException(
                 $"Failed to download '{fileName}' from Firebase Storage. HTTP {(int)response.StatusCode}",
-                inner: null,
-                statusCode: response.StatusCode);
-        }
+                inner: null, statusCode: response.StatusCode);
 
         var bytes = await response.Content.ReadAsByteArrayAsync();
-
-        _logger.LogDebug(
-            "DocumentVerificationAgent: Downloaded '{FileName}' ({Size} bytes)",
-            fileName, bytes.Length);
-
+        _logger.LogDebug("DocumentVerificationAgent: Downloaded '{FileName}' ({Size} bytes)", fileName, bytes.Length);
         return bytes;
     }
 
@@ -277,17 +277,8 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             Stream = false,
             Messages =
             [
-                new OllamaMessage
-                {
-                    Role    = "system",
-                    Content = DocumentVerificationAgentPrompts.Verification
-                },
-                new OllamaMessage
-                {
-                    Role    = "user",
-                    Content = userPrompt,
-                    Images  = imageBase64List
-                }
+                new OllamaMessage { Role = "system", Content = DocumentVerificationAgentPrompts.Verification },
+                new OllamaMessage { Role = "user",   Content = userPrompt, Images = imageBase64List }
             ]
         };
 
@@ -301,12 +292,9 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
         var responseBody = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
-        {
             throw new HttpRequestException(
                 $"Ollama API error {(int)response.StatusCode}: {responseBody}",
-                inner: null,
-                statusCode: response.StatusCode);
-        }
+                inner: null, statusCode: response.StatusCode);
 
         _logger.LogDebug(
             "DocumentVerificationAgent: Raw LLM response for DocumentId={DocumentId} — {Response}",
@@ -335,10 +323,8 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             var llmResult = JsonSerializer.Deserialize<LlmVerificationResponse>(content, DeserializerOptions)
                 ?? throw new InvalidOperationException("LLM inner JSON could not be deserialized.");
 
-            // Normalise — defensive against unexpected LLM output
             var result = string.Equals(llmResult.Result, "verified", StringComparison.OrdinalIgnoreCase)
-                ? "verified"
-                : "rejected";
+                ? "verified" : "rejected";
 
             return new DocumentVerificationResult
             {
@@ -351,18 +337,12 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             _logger.LogError(ex,
                 "DocumentVerificationAgent: Failed to parse LLM response for DocumentId={DocumentId}. Body: {Body}",
                 documentId, responseBody);
-
-            throw new InvalidOperationException(
-                $"Failed to parse LLM verification response: {ex.Message}", ex);
+            throw new InvalidOperationException($"Failed to parse LLM verification response: {ex.Message}", ex);
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Serialize applicant fields thành JSON string để nhúng vào user prompt.
-    /// Chỉ include các field có giá trị để giữ prompt gọn.
-    /// </summary>
     private static string BuildApplicantJson(Applicant applicant)
     {
         var data = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -382,7 +362,6 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             ["contact_phone"]        = applicant.ContactPhone
         };
 
-        // Strip null/empty values so the prompt stays concise
         var filtered = data
             .Where(kv => kv.Value is not null && kv.Value.ToString() != string.Empty)
             .ToDictionary(kv => kv.Key, kv => kv.Value);

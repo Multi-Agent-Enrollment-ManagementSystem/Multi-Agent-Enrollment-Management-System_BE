@@ -12,7 +12,7 @@ public static class DependencyInjection
     /// </summary>
     public static IServiceCollection AddMultiAgentServices(this IServiceCollection services, IConfiguration configuration)
     {
-        var timeoutSeconds = configuration.GetValue<int>("Ollama:TimeoutSeconds", 120);
+        var timeoutSeconds = configuration.GetValue<int>("Ollama:TimeoutSeconds", 300);
 
         // DocumentIntakeAgent — quality check on upload
         services.AddHttpClient<IDocumentIntakeAgent, DocumentIntakeAgent>(client =>
@@ -20,7 +20,15 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         });
 
+        // EligibilityEvaluationAgent — check document completeness + profile quality
+        // Registered BEFORE DocumentVerificationAgent so it can be injected into it
+        services.AddHttpClient<IEligibilityEvaluationAgent, EligibilityEvaluationAgent>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        });
+
         // DocumentVerificationAgent — cross-check documents on submission (fire-and-forget)
+        // Depends on IEligibilityEvaluationAgent
         services.AddHttpClient<IDocumentVerificationAgent, DocumentVerificationAgent>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
