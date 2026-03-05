@@ -5,6 +5,7 @@ using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
 using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
 using MAEMS.Application.Features.Applications.Queries.GetMyApplication;
 using MAEMS.Application.Features.Applications.Queries.GetMyApplications;
+using MAEMS.Application.Features.Applications.Queries.GetMyApplicationWithDocuments;
 using MAEMS.Application.Features.Documents.Commands.UploadDocument;
 using MAEMS.Domain.Interfaces;
 using MediatR;
@@ -142,7 +143,7 @@ public class ApplicationsController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetMyApplications()
     {
-        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             return Unauthorized();
 
@@ -163,6 +164,17 @@ public class ApplicationsController : ControllerBase
         var result = await _mediator.Send(new GetApplicationWithDocumentsQuery(id));
         if (!result.Success)
             return NotFound(result);
+        return Ok(result);
+    }
+    [HttpGet("me/with-documents")]
+    [Authorize(Roles = "applicant")]
+    public async Task<IActionResult> GetMyApplicationsWithDocuments()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var result = await _mediator.Send(new GetMyApplicationWithDocumentsQuery(userId));
         return Ok(result);
     }
 

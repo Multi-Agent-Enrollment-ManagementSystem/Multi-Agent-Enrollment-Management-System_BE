@@ -238,7 +238,6 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
         return infraApps.Select(a => new MAEMS.Domain.Entities.Application
         {
             ApplicationId = a.ApplicationId,
-            ApplicantId = a.ApplicantId,
             ProgramId = a.ProgramId,
             EnrollmentYearId = a.EnrollmentYearId,
             CampusId = a.CampusId,
