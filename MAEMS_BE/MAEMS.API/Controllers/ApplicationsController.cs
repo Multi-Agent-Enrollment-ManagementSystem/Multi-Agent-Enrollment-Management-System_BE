@@ -1,15 +1,17 @@
 ﻿using MAEMS.Application.DTOs.Application;
 using MAEMS.Application.DTOs.Document;
 using MAEMS.Application.Features.Applications.Commands.CreateApplication;
+using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
+using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
 using MAEMS.Application.Features.Applications.Queries.GetMyApplication;
+using MAEMS.Application.Features.Applications.Queries.GetMyApplications;
 using MAEMS.Application.Features.Documents.Commands.UploadDocument;
 using MAEMS.Domain.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
-using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
+
 
 namespace MAEMS.API.Controllers;
 
@@ -138,13 +140,13 @@ public class ApplicationsController : ControllerBase
     }
     [HttpGet("me")]
     [Authorize]
-    public async Task<IActionResult> GetMyApplication()
+    public async Task<IActionResult> GetMyApplications()
     {
         var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             return Unauthorized();
 
-        var result = await _mediator.Send(new GetMyApplicationQuery(userId));
+        var result = await _mediator.Send(new GetMyApplicationsQuery(userId));
         return Ok(result);
     }
     [HttpGet("all")]
