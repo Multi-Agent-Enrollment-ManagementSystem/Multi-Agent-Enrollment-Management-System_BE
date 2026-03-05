@@ -11,8 +11,7 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
-using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
+
 
 namespace MAEMS.API.Controllers;
 
