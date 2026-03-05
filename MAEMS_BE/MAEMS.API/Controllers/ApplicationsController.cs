@@ -1,6 +1,7 @@
 ﻿using MAEMS.Application.DTOs.Application;
 using MAEMS.Application.DTOs.Document;
 using MAEMS.Application.Features.Applications.Commands.CreateApplication;
+using MAEMS.Application.Features.Applications.Commands.SubmitApplication;
 using MAEMS.Application.Features.Applications.Queries.GetMyApplication;
 using MAEMS.Application.Features.Documents.Commands.UploadDocument;
 using MAEMS.Domain.Interfaces;
@@ -154,6 +155,48 @@ public class ApplicationsController : ControllerBase
          return Ok(result);
     }
     
-}
+    /// <summary>
+    /// Submit an application — changes status from draft to submitted (applicant only).
+    /// Triggers Document Verification Agent in the background (fire-and-forget).
+    /// </summary>
+    /// <param name="id">Application ID</param>
+    /// <returns>Updated application</returns>
+    [HttpPost("{id}/submit")]
+    [Authorize(Roles = "applicant")]
+    public async Task<IActionResult> SubmitApplication(int id)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+            {
+                return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+            }
 
- 
+            var command = new SubmitApplicationCommand
+            {
+                ApplicationId = id,
+                UserId = userId
+            };
+
+            var result = await _mediator.Send(command);
+
+            if (!result.Success)
+            {
+                if (result.Message == "Application not found")
+                    return NotFound(result);
+
+                if (result.Message == "Forbidden")
+                    return StatusCode(403, result);
+
+                return BadRequest(result);
+            }
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
+        }
+    }
+}

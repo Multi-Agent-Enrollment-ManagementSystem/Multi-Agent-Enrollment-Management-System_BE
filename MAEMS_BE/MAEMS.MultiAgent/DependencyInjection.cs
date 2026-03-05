@@ -12,11 +12,17 @@ public static class DependencyInjection
     /// </summary>
     public static IServiceCollection AddMultiAgentServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Register named HttpClient for DocumentIntakeAgent with timeout configuration
+        var timeoutSeconds = configuration.GetValue<int>("Ollama:TimeoutSeconds", 120);
+
+        // DocumentIntakeAgent — quality check on upload
         services.AddHttpClient<IDocumentIntakeAgent, DocumentIntakeAgent>(client =>
         {
-            // LLM calls can be slow — set a generous timeout (default is 100 s)
-            var timeoutSeconds = configuration.GetValue<int>("Ollama:TimeoutSeconds", 120);
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        });
+
+        // DocumentVerificationAgent — cross-check documents on submission (fire-and-forget)
+        services.AddHttpClient<IDocumentVerificationAgent, DocumentVerificationAgent>(client =>
+        {
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         });
 
