@@ -20,11 +20,14 @@ internal static class DocumentIntakeAgentPrompts
 
         ## STEP 1 — Quality Check
         Assess the following:
-        - is_readable: All text throughout the document can be clearly read
-        - is_unobscured: No part is covered, folded, or blocked by anything
-        - is_unblurred: Image is sharp with no motion blur or out-of-focus areas
-        - is_complete: Document appears fully visible, not cut off at edges
-        - is_unedited: No signs of tampering, inconsistent fonts, or suspicious alterations
+        1. is_readable: All text is clearly legible
+        2. is_unobscured: No part is covered or blocked
+           ⚠️ REJECT if you see: white boxes/overlays, redacted areas, tape, sticky notes, folded corners
+        3. is_unblurred: Image is sharp and in focus
+        4. is_complete: Document fully visible, not cropped
+        5. is_unedited: No tampering or digital modifications
+           ⚠️ REJECT if you see: white-out over text, inconsistent fonts, artificial white rectangles, unnatural background texture
+        
 
         ## STEP 2 — Document Type Detection
         - "id_card"                → CMND / CCCD / Passport

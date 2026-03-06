@@ -7,6 +7,7 @@ public class MyApplicationDto
     public string? ProgramName { get; set; }
     public string? EnrollmentYear { get; set; }
     public string? CampusName { get; set; }
+    public int? AdmissionTypeId { get; set; }
     public string? AdmissionTypeName { get; set; }
     public string? Status { get; set; }
     public DateTime? SubmittedAt { get; set; }
