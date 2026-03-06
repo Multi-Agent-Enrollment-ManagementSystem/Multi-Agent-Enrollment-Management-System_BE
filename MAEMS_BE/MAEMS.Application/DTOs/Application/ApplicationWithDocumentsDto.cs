@@ -14,5 +14,6 @@ public class ApplicationWithDocumentsDto
     public string? Status { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public DateTime? LastUpdated { get; set; }
+    public string? Notes { get; set; }
     public List<DocumentDto> Documents { get; set; } = new();
 }

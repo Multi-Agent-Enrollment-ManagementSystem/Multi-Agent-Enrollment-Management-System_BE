@@ -1,6 +1,7 @@
 ﻿using MAEMS.Application.DTOs.Application;
 using MAEMS.Application.DTOs.Document;
 using MAEMS.Application.Features.Applications.Commands.CreateApplication;
+using MAEMS.Application.Features.Applications.Commands.PatchApplication;
 using MAEMS.Application.Features.Applications.Commands.SubmitApplication;
 using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
 using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
@@ -235,6 +236,52 @@ public class ApplicationsController : ControllerBase
         }
 
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Partially update an application (officer only).
+    /// Allows changing <c>Status</c> and/or <c>RequiresReview</c>.
+    /// The officer's user id (from JWT) is automatically assigned to <c>AssignedOfficerId</c>.
+    /// </summary>
+    /// <param name="id">Application ID</param>
+    /// <param name="request">Fields to update</param>
+    /// <returns>Updated application</returns>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "officer")]
+    public async Task<IActionResult> PatchApplication(int id, [FromBody] PatchApplicationRequestDto request)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int officerUserId))
+            {
+                return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+            }
+
+            var command = new PatchApplicationCommand
+            {
+                ApplicationId = id,
+                Status = request.Status,
+                RequiresReview = request.RequiresReview,
+                OfficerUserId = officerUserId
+            };
+
+            var result = await _mediator.Send(command);
+
+            if (!result.Success)
+            {
+                if (result.Message == "Application not found")
+                    return NotFound(result);
+
+                return BadRequest(result);
+            }
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
+        }
     }
 
 }
