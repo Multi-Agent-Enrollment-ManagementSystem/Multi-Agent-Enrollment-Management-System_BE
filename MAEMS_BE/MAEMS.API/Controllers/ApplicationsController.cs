@@ -1,20 +1,15 @@
 ﻿using MAEMS.Application.DTOs.Application;
 using MAEMS.Application.DTOs.Document;
 using MAEMS.Application.Features.Applications.Commands.CreateApplication;
-using MAEMS.Application.Features.Applications.Commands.PatchApplication;
-using MAEMS.Application.Features.Applications.Commands.SubmitApplication;
-using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
-using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
+using MAEMS.Application.Features.Applications.Commands.UpdateApplicationDecision;
+using MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
 using MAEMS.Application.Features.Applications.Queries.GetMyApplication;
-using MAEMS.Application.Features.Applications.Queries.GetMyApplications;
-using MAEMS.Application.Features.Applications.Queries.GetMyApplicationWithDocuments;
 using MAEMS.Application.Features.Documents.Commands.UploadDocument;
 using MAEMS.Domain.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-
 
 namespace MAEMS.API.Controllers;
 
@@ -143,13 +138,13 @@ public class ApplicationsController : ControllerBase
     }
     [HttpGet("me")]
     [Authorize]
-    public async Task<IActionResult> GetMyApplications()
+    public async Task<IActionResult> GetMyApplication()
     {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             return Unauthorized();
 
-        var result = await _mediator.Send(new GetMyApplicationsQuery(userId));
+        var result = await _mediator.Send(new GetMyApplicationQuery(userId));
         return Ok(result);
     }
     [HttpGet("all")]
@@ -159,129 +154,29 @@ public class ApplicationsController : ControllerBase
          var result = await _mediator.Send(new GetAllFullApplicationsQuery());
          return Ok(result);
     }
-    
-    /// <summary>
-    /// Submit an application — changes status from draft to submitted (applicant only).
-    /// Triggers Document Verification Agent in the background (fire-and-forget).
-    /// </summary>
-    /// <param name="id">Application ID</param>
-    /// <returns>Updated application</returns>
-    [HttpPost("{id}/submit")]
-    [Authorize(Roles = "applicant")]
-    public async Task<IActionResult> SubmitApplication(int id)
+    [HttpPatch("officer/applications/{id}/decision")]
+    [Authorize(Roles = "officer")]
+    public async Task<IActionResult> UpdateApplicationDecision(int id, [FromBody] UpdateApplicationDecisionDto dto)
     {
-        try
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
-            {
-                return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
-            }
-
-            var command = new SubmitApplicationCommand
-            {
-                ApplicationId = id,
-                UserId = userId
-            };
-
-            var result = await _mediator.Send(command);
-
-            if (!result.Success)
-            {
-                if (result.Message == "Application not found")
-                    return NotFound(result);
-
-                if (result.Message == "Forbidden")
-                    return StatusCode(403, result);
-
-                return BadRequest(result);
-            }
-
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
-        }
-    }
-
-    [HttpGet("{id}")]
-    [Authorize(Roles = "officer,admin")]
-    public async Task<IActionResult> GetApplicationWithDocuments(int id)
-    {
-        var result = await _mediator.Send(new GetApplicationWithDocumentsQuery(id));
-        if (!result.Success)
-            return NotFound(result);
-        return Ok(result);
-    }
-    [HttpGet("me/{id}/with-documents")]
-    [Authorize(Roles = "applicant")]
-    public async Task<IActionResult> GetMyApplicationWithDocuments(int id)
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+        var officerIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (officerIdClaim == null || !int.TryParse(officerIdClaim, out var officerId))
             return Unauthorized();
 
-        var result = await _mediator.Send(new GetMyApplicationWithDocumentsQuery(userId, id));
-
-        if (!result.Success)
+        var command = new UpdateApplicationDecisionCommand
         {
-            if (result.Message == "Application not found")
-                return NotFound(result);
+            ApplicationId = id,
+            Status = dto.Status,
+            RequiresReview = dto.RequiresReview,
+            OfficerId = officerId
+        };
 
-            if (result.Message == "Forbidden")
-                return StatusCode(403, result);
-
+        var result = await _mediator.Send(command);
+        if (!result.Success)
             return BadRequest(result);
-        }
 
         return Ok(result);
-    }
-
-    /// <summary>
-    /// Partially update an application (officer only).
-    /// Allows changing <c>Status</c> and/or <c>RequiresReview</c>.
-    /// The officer's user id (from JWT) is automatically assigned to <c>AssignedOfficerId</c>.
-    /// </summary>
-    /// <param name="id">Application ID</param>
-    /// <param name="request">Fields to update</param>
-    /// <returns>Updated application</returns>
-    [HttpPatch("{id}")]
-    [Authorize(Roles = "officer")]
-    public async Task<IActionResult> PatchApplication(int id, [FromBody] PatchApplicationRequestDto request)
-    {
-        try
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int officerUserId))
-            {
-                return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
-            }
-
-            var command = new PatchApplicationCommand
-            {
-                ApplicationId = id,
-                Status = request.Status,
-                RequiresReview = request.RequiresReview,
-                OfficerUserId = officerUserId
-            };
-
-            var result = await _mediator.Send(command);
-
-            if (!result.Success)
-            {
-                if (result.Message == "Application not found")
-                    return NotFound(result);
-
-                return BadRequest(result);
-            }
-
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
-        }
     }
 
 }
+
+ 
