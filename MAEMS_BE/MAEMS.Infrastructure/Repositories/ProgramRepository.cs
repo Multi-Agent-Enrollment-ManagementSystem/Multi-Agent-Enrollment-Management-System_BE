@@ -17,8 +17,9 @@ public class ProgramRepository : BaseRepository, IProgramRepository
     {
         var infraProgram = await _context.Programs
             .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
             .FirstOrDefaultAsync(p => p.ProgramId == id);
-        
+
         if (infraProgram == null)
             return null;
 
@@ -29,6 +30,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
     {
         var infraPrograms = await _context.Programs
             .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
             .ToListAsync();
         return infraPrograms.Select(MapToDomain);
     }
@@ -37,6 +39,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
     {
         var infraPrograms = await _context.Programs
             .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
             .Where(p => p.IsActive == true)
             .ToListAsync();
 
@@ -47,7 +50,19 @@ public class ProgramRepository : BaseRepository, IProgramRepository
     {
         var infraPrograms = await _context.Programs
             .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
             .Where(p => p.MajorId == majorId)
+            .ToListAsync();
+
+        return infraPrograms.Select(MapToDomain);
+    }
+
+    public async Task<IEnumerable<DomainProgram>> GetProgramsByEnrollmentYearIdAsync(int enrollmentYearId)
+    {
+        var infraPrograms = await _context.Programs
+            .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
+            .Where(p => p.EnrollmentYearId == enrollmentYearId)
             .ToListAsync();
 
         return infraPrograms.Select(MapToDomain);
@@ -57,6 +72,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
     {
         var infraPrograms = await _context.Programs
             .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
             .ToListAsync();
         var domainPrograms = infraPrograms.Select(MapToDomain);
         return domainPrograms.Where(predicate.Compile());
@@ -68,6 +84,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
         {
             ProgramName = entity.ProgramName,
             MajorId = entity.MajorId,
+            EnrollmentYearId = entity.EnrollmentYearId,
             Description = entity.Description,
             CareerProspects = entity.CareerProspects,
             Duration = entity.Duration,
@@ -76,7 +93,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
         };
 
         await _context.Programs.AddAsync(infraProgram);
-        
+
         entity.ProgramId = infraProgram.ProgramId;
         return entity;
     }
@@ -88,6 +105,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
         {
             infraProgram.ProgramName = entity.ProgramName;
             infraProgram.MajorId = entity.MajorId;
+            infraProgram.EnrollmentYearId = entity.EnrollmentYearId;
             infraProgram.Description = entity.Description;
             infraProgram.CareerProspects = entity.CareerProspects;
             infraProgram.Duration = entity.Duration;
@@ -112,6 +130,7 @@ public class ProgramRepository : BaseRepository, IProgramRepository
     {
         var infraPrograms = await _context.Programs
             .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
             .ToListAsync();
         var domainPrograms = infraPrograms.Select(MapToDomain);
         return domainPrograms.Any(predicate.Compile());
@@ -124,6 +143,8 @@ public class ProgramRepository : BaseRepository, IProgramRepository
             ProgramId = infraProgram.ProgramId,
             ProgramName = infraProgram.ProgramName ?? string.Empty,
             MajorId = infraProgram.MajorId,
+            EnrollmentYearId = infraProgram.EnrollmentYearId,
+            EnrollmentYear = infraProgram.EnrollmentYear?.Year,
             Description = infraProgram.Description,
             CareerProspects = infraProgram.CareerProspects,
             Duration = infraProgram.Duration,
