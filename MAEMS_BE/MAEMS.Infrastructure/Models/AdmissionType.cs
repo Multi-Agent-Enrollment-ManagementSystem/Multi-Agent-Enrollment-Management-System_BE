@@ -21,7 +21,7 @@ public partial class AdmissionType
 
     public DateTime? CreatedAt { get; set; }
 
-    public virtual ICollection<Application> Applications { get; set; } = new List<Application>();
-
     public virtual EnrollmentYear EnrollmentYear { get; set; }
+
+    public virtual ICollection<ProgramAdmissionConfig> ProgramAdmissionConfigs { get; set; } = new List<ProgramAdmissionConfig>();
 }

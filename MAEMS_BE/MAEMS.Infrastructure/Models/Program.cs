@@ -23,7 +23,11 @@ public partial class Program
 
     public DateTime? CreatedAt { get; set; }
 
-    public virtual ICollection<Application> Applications { get; set; } = new List<Application>();
+    public int? EnrollmentYearId { get; set; }
+
+    public virtual EnrollmentYear EnrollmentYear { get; set; }
 
     public virtual Major Major { get; set; }
+
+    public virtual ICollection<ProgramAdmissionConfig> ProgramAdmissionConfigs { get; set; } = new List<ProgramAdmissionConfig>();
 }
