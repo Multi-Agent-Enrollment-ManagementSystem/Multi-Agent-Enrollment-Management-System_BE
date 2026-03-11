@@ -116,7 +116,7 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             var applicantJson = BuildApplicantJson(applicant);
 
             // ── Load all documents ────────────────────────────────────────
-            var documents = (await unitOfWork.Documents.GetByApplicationIdAsync(applicationId)).ToList();
+            var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(applicationId)).ToList();
 
             if (documents.Count == 0)
             {
