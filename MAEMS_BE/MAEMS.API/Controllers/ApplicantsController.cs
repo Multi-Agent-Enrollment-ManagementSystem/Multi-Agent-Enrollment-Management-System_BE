@@ -1,7 +1,10 @@
 using MAEMS.Application.DTOs.Applicant;
+using MAEMS.Application.DTOs.Document;
 using MAEMS.Application.Features.Applicants.Commands.CreateApplicant;
 using MAEMS.Application.Features.Applicants.Commands.UpdateApplicant;
 using MAEMS.Application.Features.Applicants.Queries.GetMyApplicant;
+using MAEMS.Application.Features.Applicants.Queries.GetApplicantDocuments;
+using MAEMS.Application.Features.Documents.Commands.UploadApplicantDocument;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -152,6 +155,57 @@ public class ApplicantsController : ControllerBase
         {
             return NotFound(result);
         }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get applicant documents by id (requires JWT authentication with roles = officer, admin, applicant)
+    /// </summary>
+    /// <param name="id">Applicant id</param>
+    /// <returns>Applicant documents</returns>
+    [HttpGet("{id}/documents")]
+    [Authorize(Roles = "officer,admin,applicant")]
+    public async Task<IActionResult> GetApplicantDocuments(int id)
+    {
+        var result = await _mediator.Send(new GetApplicantDocumentsQuery(id));
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Upload applicant document (requires JWT authentication with role = applicant)
+    /// </summary>
+    /// <param name="id">Applicant id</param>
+    /// <param name="request">Document information</param>
+    /// <returns>Uploaded document</returns>
+    [HttpPost("{id}/documents")]
+    [Authorize(Roles = "applicant")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadApplicantDocument(int id, [FromForm] UploadApplicantDocumentRequestDto request)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+        {
+            return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+        }
+
+        var command = new UploadApplicantDocumentCommand
+        {
+            ApplicantId = id,
+            File = request.File,
+            UserId = userId // Thêm property này vào command nếu cần kiểm tra quyền trong handler
+        };
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            if (result.Message == "Applicant not found")
+                return NotFound(result);
+            if (result.Message == "Forbidden")
+                return Forbid();
+            return BadRequest(result);
+        }
+
         return Ok(result);
     }
 }

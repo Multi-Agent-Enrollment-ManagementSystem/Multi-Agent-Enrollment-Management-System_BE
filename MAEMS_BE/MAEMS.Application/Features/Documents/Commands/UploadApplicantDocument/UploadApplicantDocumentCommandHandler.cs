@@ -7,26 +7,25 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 using IFileStorageService = MAEMS.Application.Interfaces.IFileStorageService;
 
-namespace MAEMS.Application.Features.Documents.Commands.UploadDocument;
+namespace MAEMS.Application.Features.Documents.Commands.UploadApplicantDocument;
 
-public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentCommand, BaseResponse<DocumentDto>>
+public class UploadApplicantDocumentCommandHandler : IRequestHandler<UploadApplicantDocumentCommand, BaseResponse<DocumentDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IFileStorageService _fileStorageService;
     private readonly IDocumentIntakeAgent _documentIntakeAgent;
     private readonly IMapper _mapper;
-    private readonly ILogger<UploadDocumentCommandHandler> _logger;
-    
-    // Supported: ảnh gửi trực tiếp qua images[], PDF gửi qua image_url data URI
+    private readonly ILogger<UploadApplicantDocumentCommandHandler> _logger;
+
     private readonly string[] _allowedExtensions = { ".pdf", ".jpg", ".jpeg", ".png" };
     private const long _maxFileSize = 10 * 1024 * 1024; // 10MB
 
-    public UploadDocumentCommandHandler(
+    public UploadApplicantDocumentCommandHandler(
         IUnitOfWork unitOfWork,
         IFileStorageService fileStorageService,
         IDocumentIntakeAgent documentIntakeAgent,
         IMapper mapper,
-        ILogger<UploadDocumentCommandHandler> logger)
+        ILogger<UploadApplicantDocumentCommandHandler> logger)
     {
         _unitOfWork = unitOfWork;
         _fileStorageService = fileStorageService;
@@ -35,17 +34,25 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
         _logger = logger;
     }
 
-    public async Task<BaseResponse<DocumentDto>> Handle(UploadDocumentCommand request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<DocumentDto>> Handle(UploadApplicantDocumentCommand request, CancellationToken cancellationToken)
     {
         try
         {
-            // Validate application exists
-            var application = await _unitOfWork.Applications.GetByIdAsync(request.ApplicationId);
-            if (application == null)
+            // Validate applicant exists
+            var applicant = await _unitOfWork.Applicants.GetByIdAsync(request.ApplicantId);
+            if (applicant == null)
             {
                 return BaseResponse<DocumentDto>.FailureResponse(
-                    "Application not found",
-                    new List<string> { $"Application with ID {request.ApplicationId} does not exist" }
+                    "Applicant not found",
+                    new List<string> { $"Applicant with ID {request.ApplicantId} does not exist" }
+                );
+            }
+
+            if (applicant.UserId != request.UserId)
+            {
+                return BaseResponse<DocumentDto>.FailureResponse(
+                    "Forbidden",
+                    new List<string> { "User does not have permission to upload document for this applicant" }
                 );
             }
 
@@ -59,10 +66,10 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 );
             }
 
-            // ── LLM Quality Check (Application Intake Agent) ────────────────
+            // Quality check
             _logger.LogInformation(
-                "Sending file '{FileName}' to DocumentIntakeAgent for quality check (ApplicationId={ApplicationId})",
-                request.File.FileName, request.ApplicationId);
+                "Sending file '{FileName}' to DocumentIntakeAgent for quality check (ApplicantId={ApplicantId})",
+                request.File.FileName, request.ApplicantId);
 
             var qualityResult = await _documentIntakeAgent.CheckDocumentQualityAsync(
                 request.File, cancellationToken);
@@ -70,8 +77,8 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
             if (!qualityResult.PassedQualityCheck)
             {
                 _logger.LogWarning(
-                    "Document quality check failed for '{FileName}' (ApplicationId={ApplicationId}). Issues: {Issues}",
-                    request.File.FileName, request.ApplicationId,
+                    "Document quality check failed for '{FileName}' (ApplicantId={ApplicantId}). Issues: {Issues}",
+                    request.File.FileName, request.ApplicantId,
                     string.Join("; ", qualityResult.Issues));
 
                 var errors = qualityResult.Issues.Count > 0
@@ -88,21 +95,21 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
                 "Document quality check passed for '{FileName}'. Type='{DocumentType}', Confidence={Confidence:P0}",
                 request.File.FileName, qualityResult.DocumentType, qualityResult.Confidence);
 
-            // ── Upload file to Firebase Storage ─────────────────────────────
+            // Upload file
             string downloadUrl;
             using (var stream = request.File.OpenReadStream())
             {
                 downloadUrl = await _fileStorageService.UploadFileAsync(
                     stream,
                     request.File.FileName,
-                    $"applications/{request.ApplicationId}/documents"
+                    $"applicants/{request.ApplicantId}/documents"
                 );
             }
 
-            // Tạo document mới — FilePath lưu public download URL
-            var newDocument = new Domain.Entities.Document
+            // Create document
+            var newDocument = new MAEMS.Domain.Entities.Document
             {
-                ApplicantId = request.ApplicationId,
+                ApplicantId = request.ApplicantId,
                 FilePath = downloadUrl,
                 UploadedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                 FileName = request.File.FileName,
@@ -121,7 +128,7 @@ public class UploadDocumentCommandHandler : IRequestHandler<UploadDocumentComman
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error uploading document for application {ApplicationId}", request.ApplicationId);
+            _logger.LogError(ex, "Error uploading document for applicant {ApplicantId}", request.ApplicantId);
             return BaseResponse<DocumentDto>.FailureResponse(
                 "Error uploading document",
                 new List<string> { ex.Message }

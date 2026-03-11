@@ -1,4 +1,4 @@
-using AutoMapper;
+﻿using AutoMapper;
 using MAEMS.Application.DTOs.Application;
 using MAEMS.Application.DTOs.Document;
 using MAEMS.Domain.Common;
@@ -37,7 +37,8 @@ public class GetMyApplicationWithDocumentsQueryHandler : IRequestHandler<GetMyAp
             return BaseResponse<ApplicationWithDocumentsDto>.FailureResponse("Forbidden", new() { "You do not have access to this application" });
         }
 
-        var documents = await _unitOfWork.Documents.GetByApplicationIdAsync(application.ApplicationId);
+        // Sửa: Lấy documents theo ApplicantId
+        var documents = await _unitOfWork.Documents.GetByApplicantIdAsync(applicant.ApplicantId);
         var dto = _mapper.Map<ApplicationWithDocumentsDto>(application);
         dto.Documents = _mapper.Map<List<DocumentDto>>(documents);
 

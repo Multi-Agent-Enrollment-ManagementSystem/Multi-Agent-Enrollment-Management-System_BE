@@ -1,4 +1,4 @@
-using MAEMS.Domain.Entities;
+﻿using MAEMS.Domain.Entities;
 using MAEMS.Domain.Interfaces;
 using MAEMS.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
@@ -10,18 +10,12 @@ namespace MAEMS.Infrastructure.Repositories;
 
 public class DocumentRepository : BaseRepository, IDocumentRepository
 {
-    public DocumentRepository(postgresContext context) : base(context)
-    {
-    }
+    public DocumentRepository(postgresContext context) : base(context) { }
 
     public async Task<DomainDocument?> GetByIdAsync(int id)
     {
         var infraDocument = await _context.Documents.FindAsync(id);
-        
-        if (infraDocument == null)
-            return null;
-
-        return MapToDomain(infraDocument);
+        return infraDocument == null ? null : MapToDomain(infraDocument);
     }
 
     public async Task<IEnumerable<DomainDocument>> GetAllAsync()
@@ -32,16 +26,15 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
 
     public async Task<IEnumerable<DomainDocument>> FindAsync(Expression<Func<DomainDocument, bool>> predicate)
     {
-        var infraDocuments = await _context.Documents.ToListAsync();
-        var domainDocuments = infraDocuments.Select(MapToDomain);
-        return domainDocuments.Where(predicate.Compile());
+        var all = await GetAllAsync();
+        return all.Where(predicate.Compile());
     }
 
     public async Task<DomainDocument> AddAsync(DomainDocument entity)
     {
         var infraDocument = new InfraDocument
         {
-            ApplicationId = entity.ApplicationId,
+            ApplicantId = entity.ApplicantId,
             DocumentType = entity.DocumentType,
             FilePath = entity.FilePath,
             UploadedAt = entity.UploadedAt,
@@ -52,7 +45,6 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
         };
 
         await _context.Documents.AddAsync(infraDocument);
-        
         entity.DocumentId = infraDocument.DocumentId;
         return entity;
     }
@@ -62,7 +54,7 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
         var infraDocument = await _context.Documents.FindAsync(entity.DocumentId);
         if (infraDocument != null)
         {
-            infraDocument.ApplicationId = entity.ApplicationId;
+            infraDocument.ApplicantId = entity.ApplicantId;
             infraDocument.DocumentType = entity.DocumentType;
             infraDocument.FilePath = entity.FilePath;
             infraDocument.UploadedAt = entity.UploadedAt;
@@ -73,7 +65,6 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
 
             _context.Documents.Update(infraDocument);
         }
-        await Task.CompletedTask;
     }
 
     public async Task DeleteAsync(DomainDocument entity)
@@ -83,23 +74,21 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
         {
             _context.Documents.Remove(infraDocument);
         }
-        await Task.CompletedTask;
     }
 
     public async Task<bool> ExistsAsync(Expression<Func<DomainDocument, bool>> predicate)
     {
-        var infraDocuments = await _context.Documents.ToListAsync();
-        var domainDocuments = infraDocuments.Select(MapToDomain);
-        return domainDocuments.Any(predicate.Compile());
+        var all = await GetAllAsync();
+        return all.Any(predicate.Compile());
     }
 
-    public async Task<IEnumerable<DomainDocument>> GetByApplicationIdAsync(int applicationId)
+    public async Task<IEnumerable<DomainDocument>> GetByApplicantIdAsync(int applicantId)
     {
-        var infraDocuments = await _context.Documents
-            .Where(d => d.ApplicationId == applicationId)
+        var infraDocs = await _context.Documents
+            .Where(d => d.ApplicantId == applicantId)
             .ToListAsync();
-        
-        return infraDocuments.Select(MapToDomain);
+
+        return infraDocs.Select(MapToDomain);
     }
 
     public async Task<IEnumerable<DomainDocument>> GetByDocumentTypeAsync(string documentType)
@@ -107,19 +96,16 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
         var infraDocuments = await _context.Documents
             .Where(d => d.DocumentType == documentType)
             .ToListAsync();
-        
+
         return infraDocuments.Select(MapToDomain);
     }
 
-    public async Task<DomainDocument?> GetByApplicationIdAndTypeAsync(int applicationId, string documentType)
+    public async Task<DomainDocument?> GetByApplicantIdAndTypeAsync(int applicantId, string documentType)
     {
         var infraDocument = await _context.Documents
-            .FirstOrDefaultAsync(d => d.ApplicationId == applicationId && d.DocumentType == documentType);
+            .FirstOrDefaultAsync(d => d.ApplicantId == applicantId && d.DocumentType == documentType);
 
-        if (infraDocument == null) 
-            return null;
-
-        return MapToDomain(infraDocument);
+        return infraDocument == null ? null : MapToDomain(infraDocument);
     }
 
     private static DomainDocument MapToDomain(InfraDocument infraDocument)
@@ -127,7 +113,7 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
         return new DomainDocument
         {
             DocumentId = infraDocument.DocumentId,
-            ApplicationId = infraDocument.ApplicationId,
+            ApplicantId = infraDocument.ApplicantId,
             DocumentType = infraDocument.DocumentType,
             FilePath = infraDocument.FilePath,
             UploadedAt = infraDocument.UploadedAt,
@@ -135,22 +121,6 @@ public class DocumentRepository : BaseRepository, IDocumentRepository
             FileFormat = infraDocument.FileFormat,
             VerificationResult = infraDocument.VerificationResult,
             VerificationDetails = infraDocument.VerificationDetails
-        };
-    }
-
-    private static InfraDocument MapToDomain(DomainDocument domainDocument)
-    {
-        return new InfraDocument
-        {
-            DocumentId = domainDocument.DocumentId,
-            ApplicationId = domainDocument.ApplicationId,
-            DocumentType = domainDocument.DocumentType,
-            FilePath = domainDocument.FilePath,
-            UploadedAt = domainDocument.UploadedAt,
-            FileName = domainDocument.FileName,
-            FileFormat = domainDocument.FileFormat,
-            VerificationResult = domainDocument.VerificationResult,
-            VerificationDetails = domainDocument.VerificationDetails
         };
     }
 }

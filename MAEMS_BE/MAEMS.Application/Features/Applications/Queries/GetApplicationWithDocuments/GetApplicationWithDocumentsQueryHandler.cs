@@ -26,7 +26,7 @@ public class GetApplicationWithDocumentsQueryHandler : IRequestHandler<GetApplic
             return BaseResponse<ApplicationWithDocumentsDto>.FailureResponse("Application not found", new() { "No application found with this ID" });
         }
 
-        var documents = await _unitOfWork.Documents.GetByApplicationIdAsync(application.ApplicationId);
+        var documents = await _unitOfWork.Documents.GetByApplicantIdAsync(application.ApplicationId);
 
         var dto = _mapper.Map<ApplicationWithDocumentsDto>(application);
         dto.Documents = _mapper.Map<List<DocumentDto>>(documents);

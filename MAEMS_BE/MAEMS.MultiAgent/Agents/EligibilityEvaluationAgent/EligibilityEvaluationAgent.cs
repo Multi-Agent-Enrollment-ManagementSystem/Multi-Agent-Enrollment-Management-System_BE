@@ -93,7 +93,7 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 : "{}";
 
             // ── Load submitted & verified document types ──────────────────
-            var documents = (await unitOfWork.Documents.GetByApplicationIdAsync(applicationId)).ToList();
+            var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(applicationId)).ToList();
             var submittedDocTypes = documents
                 .Where(d => !string.IsNullOrWhiteSpace(d.DocumentType))
                 .Select(d => d.DocumentType!)
