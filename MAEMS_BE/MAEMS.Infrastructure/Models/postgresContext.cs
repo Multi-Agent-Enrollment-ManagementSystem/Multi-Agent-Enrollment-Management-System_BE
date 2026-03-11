@@ -39,6 +39,8 @@ public partial class postgresContext : DbContext
 
     public virtual DbSet<Program> Programs { get; set; }
 
+    public virtual DbSet<ProgramAdmissionConfig> ProgramAdmissionConfigs { get; set; }
+
     public virtual DbSet<Role> Roles { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
@@ -145,14 +147,12 @@ public partial class postgresContext : DbContext
                 .HasMaxLength(255)
                 .HasColumnName("contact_address");
             entity.Property(e => e.ContactEmail)
-                .IsRequired()
                 .HasMaxLength(150)
                 .HasColumnName("contact_email");
             entity.Property(e => e.ContactName)
                 .HasMaxLength(255)
                 .HasColumnName("contact_name");
             entity.Property(e => e.ContactPhone)
-                .IsRequired()
                 .HasMaxLength(50)
                 .HasColumnName("contact_phone");
             entity.Property(e => e.CreatedAt)
@@ -197,16 +197,13 @@ public partial class postgresContext : DbContext
             entity.ToTable("application");
 
             entity.Property(e => e.ApplicationId).HasColumnName("application_id");
-            entity.Property(e => e.AdmissionTypeId).HasColumnName("admission_type_id");
             entity.Property(e => e.ApplicantId).HasColumnName("applicant_id");
             entity.Property(e => e.AssignedOfficerId).HasColumnName("assigned_officer_id");
-            entity.Property(e => e.CampusId).HasColumnName("campus_id");
-            entity.Property(e => e.EnrollmentYearId).HasColumnName("enrollment_year_id");
+            entity.Property(e => e.ConfigId).HasColumnName("config_id");
             entity.Property(e => e.LastUpdated)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("last_updated");
             entity.Property(e => e.Notes).HasColumnName("notes");
-            entity.Property(e => e.ProgramId).HasColumnName("program_id");
             entity.Property(e => e.RequiresReview)
                 .HasDefaultValue(false)
                 .HasColumnName("requires_review");
@@ -217,10 +214,6 @@ public partial class postgresContext : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("submitted_at");
 
-            entity.HasOne(d => d.AdmissionType).WithMany(p => p.Applications)
-                .HasForeignKey(d => d.AdmissionTypeId)
-                .HasConstraintName("application_admission_type_id_fkey");
-
             entity.HasOne(d => d.Applicant).WithMany(p => p.Applications)
                 .HasForeignKey(d => d.ApplicantId)
                 .HasConstraintName("application_applicant_id_fkey");
@@ -229,17 +222,9 @@ public partial class postgresContext : DbContext
                 .HasForeignKey(d => d.AssignedOfficerId)
                 .HasConstraintName("application_assigned_officer_id_fkey");
 
-            entity.HasOne(d => d.Campus).WithMany(p => p.Applications)
-                .HasForeignKey(d => d.CampusId)
-                .HasConstraintName("application_campus_id_fkey");
-
-            entity.HasOne(d => d.EnrollmentYear).WithMany(p => p.Applications)
-                .HasForeignKey(d => d.EnrollmentYearId)
-                .HasConstraintName("application_enrollment_year_id_fkey");
-
-            entity.HasOne(d => d.Program).WithMany(p => p.Applications)
-                .HasForeignKey(d => d.ProgramId)
-                .HasConstraintName("application_program_id_fkey");
+            entity.HasOne(d => d.Config).WithMany(p => p.Applications)
+                .HasForeignKey(d => d.ConfigId)
+                .HasConstraintName("application_config_id_fkey");
         });
 
         modelBuilder.Entity<Article>(entity =>
@@ -297,7 +282,7 @@ public partial class postgresContext : DbContext
             entity.ToTable("document");
 
             entity.Property(e => e.DocumentId).HasColumnName("document_id");
-            entity.Property(e => e.ApplicationId).HasColumnName("application_id");
+            entity.Property(e => e.ApplicantId).HasColumnName("applicant_id");
             entity.Property(e => e.DocumentType)
                 .HasMaxLength(50)
                 .HasColumnName("document_type");
@@ -317,9 +302,9 @@ public partial class postgresContext : DbContext
                 .HasMaxLength(50)
                 .HasColumnName("verification_result");
 
-            entity.HasOne(d => d.Application).WithMany(p => p.Documents)
-                .HasForeignKey(d => d.ApplicationId)
-                .HasConstraintName("document_application_id_fkey");
+            entity.HasOne(d => d.Applicant).WithMany(p => p.Documents)
+                .HasForeignKey(d => d.ApplicantId)
+                .HasConstraintName("document_applicant_id_fkey");
         });
 
         modelBuilder.Entity<EnrollmentYear>(entity =>
@@ -464,6 +449,7 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.Duration)
                 .HasMaxLength(100)
                 .HasColumnName("duration");
+            entity.Property(e => e.EnrollmentYearId).HasColumnName("enrollment_year_id");
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
                 .HasColumnName("is_active");
@@ -472,9 +458,45 @@ public partial class postgresContext : DbContext
                 .HasMaxLength(255)
                 .HasColumnName("program_name");
 
+            entity.HasOne(d => d.EnrollmentYear).WithMany(p => p.Programs)
+                .HasForeignKey(d => d.EnrollmentYearId)
+                .HasConstraintName("program_enrollment_year_id_fkey");
+
             entity.HasOne(d => d.Major).WithMany(p => p.Programs)
                 .HasForeignKey(d => d.MajorId)
                 .HasConstraintName("program_major_id_fkey");
+        });
+
+        modelBuilder.Entity<ProgramAdmissionConfig>(entity =>
+        {
+            entity.HasKey(e => e.ConfigId).HasName("program_admission_config_pkey");
+
+            entity.ToTable("program_admission_config");
+
+            entity.Property(e => e.ConfigId).HasColumnName("config_id");
+            entity.Property(e => e.AdmissionTypeId).HasColumnName("admission_type_id");
+            entity.Property(e => e.CampusId).HasColumnName("campus_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true)
+                .HasColumnName("is_active");
+            entity.Property(e => e.ProgramId).HasColumnName("program_id");
+            entity.Property(e => e.Quota).HasColumnName("quota");
+
+            entity.HasOne(d => d.AdmissionType).WithMany(p => p.ProgramAdmissionConfigs)
+                .HasForeignKey(d => d.AdmissionTypeId)
+                .HasConstraintName("pac_admission_type_id_fkey");
+
+            entity.HasOne(d => d.Campus).WithMany(p => p.ProgramAdmissionConfigs)
+                .HasForeignKey(d => d.CampusId)
+                .HasConstraintName("pac_campus_id_fkey");
+
+            entity.HasOne(d => d.Program).WithMany(p => p.ProgramAdmissionConfigs)
+                .HasForeignKey(d => d.ProgramId)
+                .HasConstraintName("pac_program_id_fkey");
         });
 
         modelBuilder.Entity<Role>(entity =>
@@ -531,6 +553,7 @@ public partial class postgresContext : DbContext
                 .HasForeignKey(d => d.RoleId)
                 .HasConstraintName("user_role_id_fkey");
         });
+        modelBuilder.HasSequence("program_admission_config_config_id_seq");
         modelBuilder.HasSequence<int>("seq_schema_version", "graphql").IsCyclic();
 
         OnModelCreatingPartial(modelBuilder);

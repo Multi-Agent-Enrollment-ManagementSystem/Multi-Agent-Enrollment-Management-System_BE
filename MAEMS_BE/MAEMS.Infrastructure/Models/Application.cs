@@ -11,14 +11,6 @@ public partial class Application
 
     public int? ApplicantId { get; set; }
 
-    public int? ProgramId { get; set; }
-
-    public int? EnrollmentYearId { get; set; }
-
-    public int? CampusId { get; set; }
-
-    public int? AdmissionTypeId { get; set; }
-
     public string Status { get; set; }
 
     public DateTime? SubmittedAt { get; set; }
@@ -31,7 +23,7 @@ public partial class Application
 
     public bool? RequiresReview { get; set; }
 
-    public virtual AdmissionType AdmissionType { get; set; }
+    public int? ConfigId { get; set; }
 
     public virtual ICollection<AgentLog> AgentLogs { get; set; } = new List<AgentLog>();
 
@@ -39,13 +31,7 @@ public partial class Application
 
     public virtual User AssignedOfficer { get; set; }
 
-    public virtual Campus Campus { get; set; }
-
-    public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
-
-    public virtual EnrollmentYear EnrollmentYear { get; set; }
+    public virtual ProgramAdmissionConfig Config { get; set; }
 
     public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
-
-    public virtual Program Program { get; set; }
 }

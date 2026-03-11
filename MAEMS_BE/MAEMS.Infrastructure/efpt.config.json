@@ -71,6 +71,10 @@
          "ObjectType": 0
       },
       {
+         "Name": "public.program_admission_config",
+         "ObjectType": 0
+      },
+      {
          "Name": "public.role",
          "ObjectType": 0
       },

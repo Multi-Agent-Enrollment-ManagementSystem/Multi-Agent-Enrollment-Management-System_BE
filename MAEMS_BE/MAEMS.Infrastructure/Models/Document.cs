@@ -9,8 +9,6 @@ public partial class Document
 {
     public int DocumentId { get; set; }
 
-    public int? ApplicationId { get; set; }
-
     public string DocumentType { get; set; }
 
     public string FilePath { get; set; }
@@ -25,7 +23,9 @@ public partial class Document
 
     public string VerificationDetails { get; set; }
 
+    public int? ApplicantId { get; set; }
+
     public virtual ICollection<AgentLog> AgentLogs { get; set; } = new List<AgentLog>();
 
-    public virtual Application Application { get; set; }
+    public virtual Applicant Applicant { get; set; }
 }

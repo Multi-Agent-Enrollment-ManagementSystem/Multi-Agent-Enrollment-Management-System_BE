@@ -45,6 +45,8 @@ public partial class Applicant
 
     public virtual ICollection<Application> Applications { get; set; } = new List<Application>();
 
+    public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
+
     public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
 
     public virtual User User { get; set; }
