@@ -61,10 +61,7 @@ public class ApplicationsController : ControllerBase
             var command = new CreateApplicationCommand
             {
                 ApplicantId = applicant.ApplicantId,
-                ProgramId = request.ProgramId,
-                EnrollmentYearId = request.EnrollmentYearId,
-                CampusId = request.CampusId,
-                AdmissionTypeId = request.AdmissionTypeId
+                ConfigId = request.ConfigId
             };
 
             var result = await _mediator.Send(command);
@@ -141,17 +138,6 @@ public class ApplicationsController : ControllerBase
     //        return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
     //    }
     //}
-    //[HttpGet("me")]
-    //[Authorize]
-    //public async Task<IActionResult> GetMyApplications()
-    //{
-    //    var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-    //    if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
-    //        return Unauthorized();
-
-    //    var result = await _mediator.Send(new GetMyApplicationsQuery(userId));
-    //    return Ok(result);
-    //}
     [HttpGet("all")]
     [Authorize(Roles = "officer,admin")]
     public async Task<IActionResult> GetAllFullApplications()
@@ -159,7 +145,32 @@ public class ApplicationsController : ControllerBase
          var result = await _mediator.Send(new GetAllFullApplicationsQuery());
          return Ok(result);
     }
-    
+
+    /// <summary>
+    /// Get all applications of the current logged-in user (requires JWT authentication with role = applicant).
+    /// UserId is extracted from JWT token.
+    /// </summary>
+    /// <returns>List of applications with program, campus, admission type info</returns>
+    [HttpGet("me")]
+    [Authorize(Roles = "applicant")]
+    public async Task<IActionResult> GetMyApplications()
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int userId))
+        {
+            return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+        }
+
+        var result = await _mediator.Send(new GetMyApplicationsQuery(userId));
+
+        if (!result.Success)
+        {
+            return NotFound(result);
+        }
+
+        return Ok(result);
+    }
+
     /// <summary>
     /// Submit an application — changes status from draft to submitted (applicant only).
     /// Triggers Document Verification Agent in the background (fire-and-forget).

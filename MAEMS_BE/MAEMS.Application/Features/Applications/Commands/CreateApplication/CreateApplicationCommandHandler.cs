@@ -1,7 +1,6 @@
 ﻿using AutoMapper;
 using MAEMS.Application.DTOs.Application;
 using MAEMS.Domain.Common;
-using MAEMS.Domain.Entities;
 using MAEMS.Domain.Interfaces;
 using MediatR;
 
@@ -22,17 +21,7 @@ public class CreateApplicationCommandHandler : IRequestHandler<CreateApplication
     {
         try
         {
-            // Kiểm tra xem applicant đã có application cho program này chưa
-            var existingApplication = await _unitOfWork.Applications.GetByApplicantIdAsync(request.ApplicantId);
-            if (existingApplication != null && existingApplication.ProgramId == request.ProgramId)
-            {
-                return BaseResponse<ApplicationDto>.FailureResponse(
-                    "Application already exists",
-                    new List<string> { "This applicant already has an application for this program" }
-                );
-            }
-
-            // Validate foreign keys exist
+            // Validate applicant tồn tại
             var applicant = await _unitOfWork.Applicants.GetByIdAsync(request.ApplicantId);
             if (applicant == null)
             {
@@ -42,43 +31,44 @@ public class CreateApplicationCommandHandler : IRequestHandler<CreateApplication
                 );
             }
 
-            var program = await _unitOfWork.Programs.GetByIdAsync(request.ProgramId);
-            if (program == null)
+            // Validate config tồn tại và đang active
+            var config = await _unitOfWork.ProgramAdmissionConfigs.GetByIdAsync(request.ConfigId);
+            if (config == null)
             {
                 return BaseResponse<ApplicationDto>.FailureResponse(
-                    "Invalid program",
-                    new List<string> { "Program not found" }
+                    "Invalid config",
+                    new List<string> { "Program admission config not found" }
+                );
+            }
+            if (config.IsActive != true)
+            {
+                return BaseResponse<ApplicationDto>.FailureResponse(
+                    "Invalid config",
+                    new List<string> { "Program admission config is not active" }
                 );
             }
 
-            var campus = await _unitOfWork.Campuses.GetByIdAsync(request.CampusId);
-            if (campus == null)
+            // Kiểm tra applicant đã có application cho config này chưa
+            var existingApplications = await _unitOfWork.Applications.GetAllByApplicantIdAsync(request.ApplicantId);
+            var duplicate = existingApplications.FirstOrDefault(a => a.ProgramId == config.ProgramId);
+            if (duplicate != null)
             {
                 return BaseResponse<ApplicationDto>.FailureResponse(
-                    "Invalid campus",
-                    new List<string> { "Campus not found" }
+                    "Application already exists",
+                    new List<string> { "This applicant already has an application for this program" }
                 );
             }
 
-            var admissionType = await _unitOfWork.AdmissionTypes.GetByIdAsync(request.AdmissionTypeId);
-            if (admissionType == null)
-            {
-                return BaseResponse<ApplicationDto>.FailureResponse(
-                    "Invalid admission type",
-                    new List<string> { "Admission type not found" }
-                );
-            }
-
-            // Tạo application mới
+            // Tạo application mới — chỉ lưu ConfigId (FK)
             var application = new Domain.Entities.Application
             {
                 ApplicantId = request.ApplicantId,
-                ProgramId = request.ProgramId,
-                EnrollmentYearId = request.EnrollmentYearId,
-                CampusId = request.CampusId,
-                AdmissionTypeId = request.AdmissionTypeId,
-                Status = "draft", // Default status
-                RequiresReview = false, // Default value
+                ConfigId = request.ConfigId,
+                ProgramId = config.ProgramId,
+                CampusId = config.CampusId,
+                AdmissionTypeId = config.AdmissionTypeId,
+                Status = "draft",
+                RequiresReview = false,
                 SubmittedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
                 LastUpdated = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
             };
@@ -86,7 +76,7 @@ public class CreateApplicationCommandHandler : IRequestHandler<CreateApplication
             var createdApplication = await _unitOfWork.Applications.AddAsync(application);
             await _unitOfWork.SaveChangesAsync();
 
-            // Get application with details
+            // Lấy lại application cùng navigation properties
             var applicationWithDetails = await _unitOfWork.Applications.GetByIdAsync(createdApplication.ApplicationId);
             var applicationDto = _mapper.Map<ApplicationDto>(applicationWithDetails);
 
