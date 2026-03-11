@@ -164,23 +164,19 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
 
     public async Task<DomainApplication> AddAsync(DomainApplication entity)
     {
-        // Tìm Config dựa trên ProgramId, CampusId, AdmissionTypeId
-        var config = await _context.ProgramAdmissionConfigs
-            .FirstOrDefaultAsync(c =>
-                c.ProgramId == entity.ProgramId &&
-                c.CampusId == entity.CampusId &&
-                c.AdmissionTypeId == entity.AdmissionTypeId &&
-                c.IsActive == true);
+        // Validate config tồn tại
+        var configExists = await _context.ProgramAdmissionConfigs
+            .AnyAsync(c => c.ConfigId == entity.ConfigId && c.IsActive == true);
 
-        if (config == null)
+        if (!configExists)
         {
-            throw new InvalidOperationException("No active config found for this program/campus/admission type combination");
+            throw new InvalidOperationException("No active config found for the provided ConfigId");
         }
 
         var infraApplication = new InfraApplication
         {
             ApplicantId = entity.ApplicantId,
-            ConfigId = config.ConfigId,
+            ConfigId = entity.ConfigId,
             Status = entity.Status ?? "draft",
             SubmittedAt = entity.SubmittedAt,
             LastUpdated = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified),
@@ -230,8 +226,8 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
         {
             ApplicationId = infraApplication.ApplicationId,
             ApplicantId = infraApplication.ApplicantId,
+            ConfigId = infraApplication.ConfigId,
             ProgramId = infraApplication.Config?.ProgramId,
-            EnrollmentYearId = null, // Không có trong DB
             CampusId = infraApplication.Config?.CampusId,
             AdmissionTypeId = infraApplication.Config?.AdmissionTypeId,
             Status = infraApplication.Status,
@@ -243,7 +239,6 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
             // Navigation properties
             ApplicantName = infraApplication.Applicant?.FullName,
             ProgramName = infraApplication.Config?.Program?.ProgramName,
-            EnrollmentYear = null, // Không có
             CampusName = infraApplication.Config?.Campus?.Name,
             AdmissionTypeName = infraApplication.Config?.AdmissionType?.AdmissionTypeName,
             AssignedOfficerName = infraApplication.AssignedOfficer?.Username

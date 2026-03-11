@@ -5,10 +5,9 @@ public class ApplicationDto
     public int ApplicationId { get; set; }
     public int? ApplicantId { get; set; }
     public string? ApplicantName { get; set; }
+    public int? ConfigId { get; set; }
     public int? ProgramId { get; set; }
     public string? ProgramName { get; set; }
-    public int? EnrollmentYearId { get; set; }
-    public string? EnrollmentYear { get; set; }
     public int? CampusId { get; set; }
     public string? CampusName { get; set; }
     public int? AdmissionTypeId { get; set; }
