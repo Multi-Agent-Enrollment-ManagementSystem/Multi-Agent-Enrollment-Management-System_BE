@@ -10,8 +10,9 @@ public interface IUnitOfWork : IDisposable
     IApplicantRepository Applicants { get; }
     IAdmissionTypeRepository AdmissionTypes { get; }
     IApplicationRepository Applications { get; }
-    IDocumentRepository Documents { get; } // Added
-    
+    IDocumentRepository Documents { get; }
+    IProgramAdmissionConfigRepository ProgramAdmissionConfigs { get; }
+
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitTransactionAsync();
