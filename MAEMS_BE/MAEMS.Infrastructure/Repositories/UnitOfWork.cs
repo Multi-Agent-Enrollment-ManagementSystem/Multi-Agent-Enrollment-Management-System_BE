@@ -24,6 +24,7 @@ public class UnitOfWork : IUnitOfWork
     public IAdmissionTypeRepository AdmissionTypes => new AdmissionTypeRepository(_context);
     public IApplicationRepository Applications => new ApplicationRepository(_context);
     public IDocumentRepository Documents => new DocumentRepository(_context); // Added
+    public IProgramAdmissionConfigRepository ProgramAdmissionConfigs => new ProgramAdmissionConfigRepository(_context);
 
     public async Task<int> SaveChangesAsync()
     {
