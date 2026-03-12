@@ -10,4 +10,5 @@ public class ProgramDto
     public string? CareerProspects { get; set; }
     public string? Duration { get; set; }
     public bool? IsActive { get; set; }
+    public List<ProgramCampusDto> Campuses { get; set; } = new();
 }
