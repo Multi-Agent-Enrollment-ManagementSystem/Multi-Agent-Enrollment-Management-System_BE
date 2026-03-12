@@ -9,7 +9,8 @@ public class ProgramProfile : Profile
     public ProgramProfile()
     {
         CreateMap<DomainProgram, ProgramDto>()
-            .ForMember(dest => dest.MajorName, opt => opt.Ignore());
+            .ForMember(dest => dest.MajorName, opt => opt.Ignore())
+            .ForMember(dest => dest.Campuses, opt => opt.Ignore());
 
         CreateMap<DomainProgram, ProgramBasicDto>()
             .ForMember(dest => dest.MajorName, opt => opt.Ignore());

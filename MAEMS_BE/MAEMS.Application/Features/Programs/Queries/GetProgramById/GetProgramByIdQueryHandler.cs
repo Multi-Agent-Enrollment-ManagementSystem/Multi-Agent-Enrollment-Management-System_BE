@@ -44,6 +44,19 @@ public class GetProgramByIdQueryHandler : IRequestHandler<GetProgramByIdQuery, B
                 programDto.MajorName = string.Empty;
             }
 
+            // Get all configs for this program and group by campus using AutoMapper
+            var configs = await _unitOfWork.ProgramAdmissionConfigs.GetConfigsByProgramIdAsync(request.Id);
+
+            programDto.Campuses = configs
+                .GroupBy(c => new { c.CampusId, c.CampusName })
+                .Select(g => new ProgramCampusDto
+                {
+                    CampusId = g.Key.CampusId,
+                    CampusName = g.Key.CampusName,
+                    Admissions = _mapper.Map<List<ProgramCampusAdmissionDto>>(g.ToList())
+                })
+                .ToList();
+
             return BaseResponse<ProgramDto>.SuccessResponse(programDto, "Program retrieved successfully");
         }
         catch (Exception ex)
