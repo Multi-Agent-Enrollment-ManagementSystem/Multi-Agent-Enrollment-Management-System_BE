@@ -101,10 +101,15 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
                 return;
             }
 
-            Applicant? applicant = null;
-            if (application.ApplicantId.HasValue)
-                applicant = await unitOfWork.Applicants.GetByIdAsync(application.ApplicantId.Value);
+            if (!application.ApplicantId.HasValue)
+            {
+                _logger.LogWarning(
+                    "DocumentVerificationAgent: ApplicationId={ApplicationId} has no ApplicantId, aborting.",
+                    applicationId);
+                return;
+            }
 
+            var applicant = await unitOfWork.Applicants.GetByIdAsync(application.ApplicantId.Value);
             if (applicant == null)
             {
                 _logger.LogWarning(
@@ -115,27 +120,44 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
 
             var applicantJson = BuildApplicantJson(applicant);
 
-            // ── Load all documents ────────────────────────────────────────
-            var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(applicationId)).ToList();
+            // ── Load all documents by ApplicantId (NOT ApplicationId) ─────
+            var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(application.ApplicantId.Value)).ToList();
 
             if (documents.Count == 0)
             {
                 _logger.LogInformation(
-                    "DocumentVerificationAgent: No documents found for ApplicationId={ApplicationId}.",
+                    "DocumentVerificationAgent: No documents found for ApplicantId={ApplicantId} (ApplicationId={ApplicationId}).",
+                    application.ApplicantId.Value,
+                    applicationId);
+                return;
+            }
+
+            // Only verify documents that are still pending
+            var pendingDocuments = documents
+                .Where(d => string.Equals(d.VerificationResult, "pending", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (pendingDocuments.Count == 0)
+            {
+                _logger.LogInformation(
+                    "DocumentVerificationAgent: No pending documents to verify for ApplicantId={ApplicantId} (ApplicationId={ApplicationId}).",
+                    application.ApplicantId.Value,
                     applicationId);
                 return;
             }
 
             _logger.LogInformation(
-                "DocumentVerificationAgent: Verifying {Count} document(s) for ApplicationId={ApplicationId}",
-                documents.Count, applicationId);
+                "DocumentVerificationAgent: Verifying {Count} pending document(s) for ApplicantId={ApplicantId} (ApplicationId={ApplicationId})",
+                pendingDocuments.Count,
+                application.ApplicantId.Value,
+                applicationId);
 
             // ── Verify each document, collect rejected details ────────────
             var rejectedNotes = new List<string>();
 
-            foreach (var document in documents)
+            foreach (var document in pendingDocuments)
             {
-                await VerifySingleDocumentAsync(document, applicantJson, unitOfWork);
+                await VerifySingleDocumentAsync(document, applicantJson, unitOfWork, applicationId);
 
                 if (string.Equals(document.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase)
                     && !string.IsNullOrWhiteSpace(document.VerificationDetails))
@@ -172,7 +194,8 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
     private async Task VerifySingleDocumentAsync(
         Document document,
         string applicantJson,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        int applicationId)
     {
         if (string.IsNullOrWhiteSpace(document.FilePath) || string.IsNullOrWhiteSpace(document.FileName))
         {
@@ -188,9 +211,19 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
                 "DocumentVerificationAgent: Verifying DocumentId={DocumentId} '{FileName}' (Type={Type})",
                 document.DocumentId, document.FileName, document.DocumentType);
 
-            var fileBytes        = await DownloadBytesAsync(document.FilePath, document.FileName);
-            var imageBase64List  = PrepareImagesFromBytes(fileBytes, document.FileName);
-            var responseBody     = await CallOllamaAsync(imageBase64List, applicantJson, document);
+            var fileBytes         = await DownloadBytesAsync(document.FilePath, document.FileName);
+            var imageBase64List   = PrepareImagesFromBytes(fileBytes, document.FileName);
+            var responseBody      = await CallOllamaAsync(imageBase64List, applicantJson, document);
+
+            // Persist raw response to AgentLog
+            await SaveAgentLogAsync(
+                unitOfWork,
+                applicationId,
+                document.DocumentId,
+                action: "document_verification",
+                status: "llm_response",
+                outputData: responseBody);
+
             var verificationResult = ParseLlmResponse(responseBody, document.DocumentId);
 
             document.VerificationResult  = verificationResult.Result;
@@ -210,6 +243,25 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             _logger.LogError(ex,
                 "DocumentVerificationAgent: Error verifying DocumentId={DocumentId}, marking as 'error'",
                 document.DocumentId);
+
+            // Persist error to AgentLog
+            try
+            {
+                await SaveAgentLogAsync(
+                    unitOfWork,
+                    applicationId,
+                    document.DocumentId,
+                    action: "document_verification",
+                    status: "error",
+                    outputData: JsonSerializer.Serialize(new { error = ex.Message }, SerializerOptions));
+            }
+            catch (Exception logEx)
+            {
+                _logger.LogError(logEx,
+                    "DocumentVerificationAgent: Failed to save AgentLog for error state (DocumentId={DocumentId})",
+                    document.DocumentId);
+            }
+
             try
             {
                 document.VerificationResult  = "error";
@@ -224,6 +276,28 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
                     document.DocumentId);
             }
         }
+    }
+
+    private async Task SaveAgentLogAsync(
+        IUnitOfWork unitOfWork,
+        int applicationId,
+        int documentId,
+        string action,
+        string status,
+        string? outputData)
+    {
+        var log = new AgentLog
+        {
+            ApplicationId = applicationId,
+            DocumentId = documentId,
+            AgentType = nameof(DocumentVerificationAgent),
+            Action = action,
+            Status = status,
+            OutputData = outputData,
+            CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+        };
+
+        await unitOfWork.AgentLogs.AddAsync(log);
     }
 
     // ── Step 1: Download bytes ────────────────────────────────────────────────

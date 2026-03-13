@@ -13,6 +13,8 @@ public interface IUnitOfWork : IDisposable
     IDocumentRepository Documents { get; }
     IProgramAdmissionConfigRepository ProgramAdmissionConfigs { get; }
 
+    IAgentLogRepository AgentLogs { get; }
+
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitTransactionAsync();
