@@ -21,4 +21,5 @@ public class Application
     public string? CampusName { get; set; }
     public string? AdmissionTypeName { get; set; }
     public string? AssignedOfficerName { get; set; }
+    public string? EnrollmentYear { get; set; }
 }

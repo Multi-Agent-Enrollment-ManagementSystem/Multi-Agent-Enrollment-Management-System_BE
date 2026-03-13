@@ -31,6 +31,15 @@ public class GetApplicationWithDocumentsQueryHandler : IRequestHandler<GetApplic
             return BaseResponse<ApplicationWithDocumentsDto>.FailureResponse("Applicant not found", new() { "This application has no associated applicant" });
         }
 
+        if (request.UserRole == "applicant" && request.UserId.HasValue)
+        {
+            var applicant = await _unitOfWork.Applicants.GetByUserIdAsync(request.UserId.Value);
+            if (applicant == null || applicant.ApplicantId != application.ApplicantId)
+            {
+                return BaseResponse<ApplicationWithDocumentsDto>.FailureResponse("Forbidden", new() { "You are not authorized to view this application." });
+            }
+        }
+
         var documents = await _unitOfWork.Documents.GetByApplicantIdAsync(application.ApplicantId.Value);
 
         var dto = _mapper.Map<ApplicationWithDocumentsDto>(application);

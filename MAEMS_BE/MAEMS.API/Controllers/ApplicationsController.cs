@@ -217,12 +217,28 @@ public class ApplicationsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "officer,admin")]
+    [Authorize(Roles = "officer,admin,applicant")]
     public async Task<IActionResult> GetApplicationWithDocuments(int id)
     {
-        var result = await _mediator.Send(new GetApplicationWithDocumentsQuery(id));
+        var role = User.FindFirst(ClaimTypes.Role)?.Value;
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        
+        int? userId = null;
+        if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out int parsedUserId))
+        {
+            userId = parsedUserId;
+        }
+
+        var result = await _mediator.Send(new GetApplicationWithDocumentsQuery(id, role, userId));
+        
         if (!result.Success)
+        {
+            if (result.Message == "Forbidden")
+            {
+                return StatusCode(403, result);
+            }
             return NotFound(result);
+        }
         return Ok(result);
     }
     //[HttpGet("me/{id}/with-documents")]
