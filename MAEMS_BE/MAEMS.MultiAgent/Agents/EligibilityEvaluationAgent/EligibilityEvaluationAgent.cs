@@ -108,6 +108,19 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
 
             // ── Call LLM ──────────────────────────────────────────────────
             var responseBody = await CallOllamaAsync(requiredDocTypes, submittedDocTypes, applicantJson, applicationId);
+
+            // Save raw LLM response to AgentLog (application-level)
+            await unitOfWork.AgentLogs.AddAsync(new AgentLog
+            {
+                ApplicationId = applicationId,
+                DocumentId = null,
+                AgentType = nameof(EligibilityEvaluationAgent),
+                Action = "eligibility_evaluation",
+                Status = "llm_response",
+                OutputData = responseBody,
+                CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+            });
+
             var eligibilityResult = ParseLlmResponse(responseBody, applicationId);
 
             // ── Determine if RequiresReview ───────────────────────────────
@@ -155,6 +168,25 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             _logger.LogError(ex,
                 "EligibilityEvaluationAgent: Unhandled error for ApplicationId={ApplicationId}",
                 applicationId);
+
+            // Best-effort error log
+            try
+            {
+                await unitOfWork.AgentLogs.AddAsync(new AgentLog
+                {
+                    ApplicationId = applicationId,
+                    DocumentId = null,
+                    AgentType = nameof(EligibilityEvaluationAgent),
+                    Action = "eligibility_evaluation",
+                    Status = "error",
+                    OutputData = JsonSerializer.Serialize(new { error = ex.Message }, SerializerOptions),
+                    CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
+                });
+            }
+            catch
+            {
+                // ignore logging failures
+            }
         }
     }
 

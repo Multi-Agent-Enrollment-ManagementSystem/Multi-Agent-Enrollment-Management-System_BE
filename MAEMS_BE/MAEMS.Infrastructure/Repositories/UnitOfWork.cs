@@ -26,6 +26,8 @@ public class UnitOfWork : IUnitOfWork
     public IDocumentRepository Documents => new DocumentRepository(_context); // Added
     public IProgramAdmissionConfigRepository ProgramAdmissionConfigs => new ProgramAdmissionConfigRepository(_context);
 
+    public IAgentLogRepository AgentLogs => new AgentLogRepository(_context);
+
     public async Task<int> SaveChangesAsync()
     {
         return await _context.SaveChangesAsync();
