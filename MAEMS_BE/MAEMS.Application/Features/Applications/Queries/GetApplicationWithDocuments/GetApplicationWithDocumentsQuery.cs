@@ -7,5 +7,13 @@ namespace MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocu
 public class GetApplicationWithDocumentsQuery : IRequest<BaseResponse<ApplicationWithDocumentsDto>>
 {
     public int ApplicationId { get; set; }
-    public GetApplicationWithDocumentsQuery(int applicationId) => ApplicationId = applicationId;
+    public string? UserRole { get; set; }
+    public int? UserId { get; set; }
+
+    public GetApplicationWithDocumentsQuery(int applicationId, string? userRole = null, int? userId = null)
+    {
+        ApplicationId = applicationId;
+        UserRole = userRole;
+        UserId = userId;
+    }
 }

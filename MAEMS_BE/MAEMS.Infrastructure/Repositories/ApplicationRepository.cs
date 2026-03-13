@@ -22,6 +22,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .FirstOrDefaultAsync(a => a.ApplicationId == id);
 
@@ -38,6 +39,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .ToListAsync();
 
@@ -54,6 +56,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .FirstOrDefaultAsync(a => a.ApplicantId == applicantId);
 
@@ -70,6 +73,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .Where(a => a.ApplicantId == applicantId)
             .ToListAsync();
@@ -87,6 +91,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .Where(a => a.Status == status)
             .ToListAsync();
@@ -104,6 +109,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .Where(a => a.Config.ProgramId == programId)
             .ToListAsync();
@@ -127,6 +133,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .Where(a => a.AssignedOfficerId == officerId)
             .ToListAsync();
@@ -144,6 +151,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
                 .ThenInclude(c => c.Campus)
             .Include(a => a.Config)
                 .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
             .Include(a => a.AssignedOfficer)
             .Where(a => a.RequiresReview == true)
             .ToListAsync();
@@ -241,7 +249,8 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
             ProgramName = infraApplication.Config?.Program?.ProgramName,
             CampusName = infraApplication.Config?.Campus?.Name,
             AdmissionTypeName = infraApplication.Config?.AdmissionType?.AdmissionTypeName,
-            AssignedOfficerName = infraApplication.AssignedOfficer?.Username
+            AssignedOfficerName = infraApplication.AssignedOfficer?.Username,
+            EnrollmentYear = infraApplication.Config?.AdmissionType?.EnrollmentYear?.Year
         };
     }
 }

@@ -13,6 +13,7 @@ public class ApplicationDto
     public int? AdmissionTypeId { get; set; }
     public string? AdmissionTypeName { get; set; }
     public string? Status { get; set; }
+    public string? EnrollmentYear { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public DateTime? LastUpdated { get; set; }
     public int? AssignedOfficerId { get; set; }
