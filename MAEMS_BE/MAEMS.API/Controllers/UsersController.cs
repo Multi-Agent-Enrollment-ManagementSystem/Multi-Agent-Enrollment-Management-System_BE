@@ -4,6 +4,10 @@ using MAEMS.Application.Features.Users.Commands.RefreshToken;
 using MAEMS.Application.Features.Users.Commands.RegisterUser;
 using MAEMS.Application.Features.Users.Commands.VerifyEmail;
 using MAEMS.Application.Features.Users.Queries.GetUserProfile;
+using MAEMS.Application.Features.Users.Queries.GetAllUsers;
+using MAEMS.Application.Features.Users.Commands.CreateUserByAdmin;
+using MAEMS.Application.Features.Users.Commands.PatchUserIsActive;
+using MAEMS.Application.Features.Users.Queries.GetUserDetailById;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -148,5 +152,93 @@ public class UsersController : ControllerBase
 
         // Redirect to login page on success
         return Redirect($"{frontendUrl}");
+    }
+
+    /// <summary>
+    /// Get all users (requires JWT authentication with role = admin)
+    /// </summary>
+    /// <param name="roleId">Optional role id filter</param>
+    /// <returns>List of users</returns>
+    [HttpGet]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> GetAllUsers([FromQuery] int? roleId)
+    {
+        var result = await _mediator.Send(new GetAllUsersQuery(roleId));
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a new user (admin only). This does not require email verification and sets IsActive = true.
+    /// </summary>
+    /// <param name="command">User details (Username, Email, Password, RoleId)</param>
+    /// <returns>Created user information</returns>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateUser([FromBody] CreateUserByAdminCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    public class PatchUserRequest
+    {
+        public bool? IsActive { get; set; }
+        public int? RoleId { get; set; }
+    }
+
+    /// <summary>
+    /// Update user's active status and/or role (admin only)
+    /// </summary>
+    /// <param name="id">User id</param>
+    /// <param name="request">Fields to update</param>
+    /// <returns>Updated user information</returns>
+    [HttpPatch("{id:int}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchUser([FromRoute] int id, [FromBody] PatchUserRequest request)
+    {
+        var result = await _mediator.Send(new PatchUserIsActiveCommand
+        {
+            UserId = id,
+            IsActive = request.IsActive,
+            RoleId = request.RoleId
+        });
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Get user by id (admin only). If user's RoleId = 4, include applicant profile.
+    /// </summary>
+    /// <param name="id">User id</param>
+    /// <returns>User details</returns>
+    [HttpGet("by-id/{id:int}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> GetUserById([FromRoute] int id)
+    {
+        var result = await _mediator.Send(new GetUserDetailByIdQuery(id));
+
+        if (!result.Success)
+        {
+            return NotFound(result);
+        }
+
+        return Ok(result);
     }
 }
