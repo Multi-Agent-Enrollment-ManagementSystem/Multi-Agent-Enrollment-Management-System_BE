@@ -4,4 +4,4 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 
-public record GetAllProgramsQuery : IRequest<BaseResponse<IEnumerable<ProgramDto>>>;
+public record GetAllProgramsQuery(int? MajorId = null, int? EnrollmentYearId = null) : IRequest<BaseResponse<IEnumerable<ProgramDto>>>;

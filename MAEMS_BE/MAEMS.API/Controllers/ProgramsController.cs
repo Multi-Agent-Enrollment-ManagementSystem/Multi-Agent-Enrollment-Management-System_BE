@@ -4,6 +4,7 @@ using MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 using MAEMS.Application.Features.Programs.Queries.GetProgramById;
 using MAEMS.Application.Features.Programs.Queries.GetProgramsBasicByFilter;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MAEMS.API.Controllers;
@@ -20,13 +21,17 @@ public class ProgramsController : ControllerBase
     }
 
     /// <summary>
-    /// Get all programs with major name
+    /// Get all programs with major name (optional filter by majorId and/or enrollmentYearId)
     /// </summary>
-    /// <returns>List of all programs</returns>
+    /// <param name="majorId">Optional major ID to filter programs</param>
+    /// <param name="enrollmentYearId">Optional enrollment year ID to filter programs</param>
+    /// <returns>List of programs</returns>
     [HttpGet]
-    public async Task<IActionResult> GetAllPrograms()
+    [Authorize(Roles = "admin")]
+
+    public async Task<IActionResult> GetAllPrograms([FromQuery] int? majorId, [FromQuery] int? enrollmentYearId)
     {
-        var query = new GetAllProgramsQuery();
+        var query = new GetAllProgramsQuery(majorId, enrollmentYearId);
         var result = await _mediator.Send(query);
 
         if (!result.Success)
