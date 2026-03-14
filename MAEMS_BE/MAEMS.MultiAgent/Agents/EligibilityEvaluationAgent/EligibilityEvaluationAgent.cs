@@ -93,7 +93,16 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 : "{}";
 
             // ── Load submitted & verified document types ──────────────────
-            var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(applicationId)).ToList();
+            // Documents are associated with ApplicantId, not ApplicationId
+            if (!application.ApplicantId.HasValue)
+            {
+                _logger.LogWarning(
+                    "EligibilityEvaluationAgent: ApplicationId={ApplicationId} has no ApplicantId, cannot load documents.",
+                    applicationId);
+                return;
+            }
+
+            var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(application.ApplicantId.Value)).ToList();
             var submittedDocTypes = documents
                 .Where(d => !string.IsNullOrWhiteSpace(d.DocumentType))
                 .Select(d => d.DocumentType!)
