@@ -97,22 +97,11 @@ public sealed class ChatBoxAgent : IChatBoxAgent
                      .Select(a => new { a.AdmissionTypeName, a.Type })
                      .ToListAsync(cancellationToken);
 
-                 // Lấy thông tin Campus (Hotline, Email, Website, Địa chỉ)
-                 var campus = await _dbContext.Campuses
-                     .Where(c => c.IsActive == true)
-                     .Select(c => new { c.CampusName, c.Phone, c.Email, c.Website, c.Address })
-                     .FirstOrDefaultAsync(cancellationToken);
-
+                
                  var programsText = string.Join("\n", programs.Select(p => $"- {p.ProgramName}: {p.Description}"));
                  var majorsText = string.Join(", ", majors.Select(m => m.MajorName));
                  var admissionTypesText = string.Join("\n", admissionTypes.Select(a =>
                      $"- {a.AdmissionTypeName} ({a.Type})"));
-
-                 // Build contact info from Campus or use defaults
-                 var hotline = campus?.Phone ?? "1900-1234-567";
-                 var email = campus?.Email ?? "tuyen.sinh@university.edu.vn";
-                 var website = campus?.Website ?? "https://admissions.university.edu.vn";
-                 var address = campus?.Address ?? "123 Đường Tuyển Sinh, TP. Hồ Chí Minh";
 
                  var systemPrompt = $@"Bạn là chatbot tư vấn tuyển sinh của Trường Đại học.
 
