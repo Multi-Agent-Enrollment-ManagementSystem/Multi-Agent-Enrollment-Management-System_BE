@@ -34,6 +34,10 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         });
 
+        // ChatBoxAgent — handle Q&A about admission requirements
+        // Uses Application.Interfaces.IChatBoxAgent interface (not the one in MultiAgent.Agents)
+        services.AddScoped<IChatBoxAgent, ChatBoxAgent>();
+
         return services;
     }
 }
