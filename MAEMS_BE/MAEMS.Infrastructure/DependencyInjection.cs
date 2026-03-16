@@ -27,7 +27,8 @@ public static class DependencyInjection
         services.AddScoped<IAdmissionTypeRepository, AdmissionTypeRepository>();
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IDocumentRepository, DocumentRepository>();
-        
+        services.AddScoped<ILlmChatLogRepository, LlmChatLogRepository>();
+
         // Register Unit of Work
         services.AddScoped<IUnitOfWork, UnitOfWork>();
 
@@ -36,7 +37,7 @@ public static class DependencyInjection
         
         // Register Email Service
         services.AddScoped<IEmailService, EmailService>();
-        
+
         // Register Token Service
         services.AddScoped<ITokenService, TokenService>();
 
@@ -45,6 +46,9 @@ public static class DependencyInjection
 
         // Register File Storage Service (Firebase implementation)
         services.AddSingleton<MAEMS.Application.Interfaces.IFileStorageService, FirebaseStorageService>();
+
+        // Register Gemini Service
+        services.AddHttpClient<IGeminiService, GeminiService>();
 
         return services;
     }
