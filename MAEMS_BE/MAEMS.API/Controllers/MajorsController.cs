@@ -1,8 +1,11 @@
+using MAEMS.Application.Features.Majors.Commands.CreateMajor;
+using MAEMS.Application.Features.Majors.Commands.PatchMajor;
 using MAEMS.Application.Features.Majors.Queries.GetActiveMajors;
 using MAEMS.Application.Features.Majors.Queries.GetActiveMajorsBasic;
 using MAEMS.Application.Features.Majors.Queries.GetAllMajors;
 using MAEMS.Application.Features.Majors.Queries.GetMajorById;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MAEMS.API.Controllers;
@@ -87,6 +90,38 @@ public class MajorsController : ControllerBase
         {
             return BadRequest(result);
         }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a new major (admin only)
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateMajor([FromBody] CreateMajorCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Patch major (admin only) - partial update
+    /// </summary>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchMajor(int id, [FromBody] PatchMajorCommand command)
+    {
+        command.MajorId = id;
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return NotFound(result);
 
         return Ok(result);
     }
