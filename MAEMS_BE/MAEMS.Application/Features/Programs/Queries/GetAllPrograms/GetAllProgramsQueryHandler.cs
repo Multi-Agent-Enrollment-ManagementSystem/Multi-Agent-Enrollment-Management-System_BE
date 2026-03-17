@@ -21,13 +21,34 @@ public class GetAllProgramsQueryHandler : IRequestHandler<GetAllProgramsQuery, B
     {
         try
         {
-            var programs = await _unitOfWork.Programs.GetAllAsync();
+            var programs = (await _unitOfWork.Programs.GetAllAsync()).ToList();
+
+            if (request.MajorId.HasValue)
+            {
+                programs = programs.Where(p => p.MajorId == request.MajorId.Value).ToList();
+            }
+
+            if (request.EnrollmentYearId.HasValue)
+            {
+                var byYear = (await _unitOfWork.Programs.GetProgramsByEnrollmentYearIdAsync(request.EnrollmentYearId.Value)).ToList();
+
+                if (request.MajorId.HasValue)
+                {
+                    var yearIds = byYear.Select(p => p.ProgramId).ToHashSet();
+                    programs = programs.Where(p => yearIds.Contains(p.ProgramId)).ToList();
+                }
+                else
+                {
+                    programs = byYear;
+                }
+            }
+
             var programDtos = new List<ProgramDto>();
 
             foreach (var program in programs)
             {
                 var programDto = _mapper.Map<ProgramDto>(program);
-                
+
                 // Get major name if MajorId exists
                 if (program.MajorId.HasValue)
                 {

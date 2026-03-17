@@ -1,9 +1,13 @@
+using MAEMS.Application.Features.Programs.Commands.CreateProgram;
+using MAEMS.Application.Features.Programs.Commands.PatchProgram;
 using MAEMS.Application.Features.Programs.Queries.GetActivePrograms;
 using MAEMS.Application.Features.Programs.Queries.GetActiveProgramsBasic;
 using MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 using MAEMS.Application.Features.Programs.Queries.GetProgramById;
 using MAEMS.Application.Features.Programs.Queries.GetProgramsBasicByFilter;
+using MAEMS.Application.DTOs.Program;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MAEMS.API.Controllers;
@@ -20,13 +24,17 @@ public class ProgramsController : ControllerBase
     }
 
     /// <summary>
-    /// Get all programs with major name
+    /// Get all programs with major name (optional filter by majorId and/or enrollmentYearId)
     /// </summary>
-    /// <returns>List of all programs</returns>
+    /// <param name="majorId">Optional major ID to filter programs</param>
+    /// <param name="enrollmentYearId">Optional enrollment year ID to filter programs</param>
+    /// <returns>List of programs</returns>
     [HttpGet]
-    public async Task<IActionResult> GetAllPrograms()
+    [Authorize(Roles = "admin")]
+
+    public async Task<IActionResult> GetAllPrograms([FromQuery] int? majorId, [FromQuery] int? enrollmentYearId)
     {
-        var query = new GetAllProgramsQuery();
+        var query = new GetAllProgramsQuery(majorId, enrollmentYearId);
         var result = await _mediator.Send(query);
 
         if (!result.Success)
@@ -108,6 +116,43 @@ public class ProgramsController : ControllerBase
         {
             return BadRequest(result);
         }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a new program (admin only)
+    /// </summary>
+    /// <param name="request">Program information</param>
+    /// <returns>Created program</returns>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateProgram([FromBody] CreateProgramCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Patch program (admin only) - partial update
+    /// </summary>
+    /// <param name="id">Program ID</param>
+    /// <param name="request">Fields to update (only provided fields will be updated)</param>
+    /// <returns>Updated program</returns>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchProgram(int id, [FromBody] PatchProgramCommand command)
+    {
+        command.ProgramId = id;
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return NotFound(result);
 
         return Ok(result);
     }
