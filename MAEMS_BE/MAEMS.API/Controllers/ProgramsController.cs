@@ -1,8 +1,11 @@
+using MAEMS.Application.Features.Programs.Commands.CreateProgram;
+using MAEMS.Application.Features.Programs.Commands.PatchProgram;
 using MAEMS.Application.Features.Programs.Queries.GetActivePrograms;
 using MAEMS.Application.Features.Programs.Queries.GetActiveProgramsBasic;
 using MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 using MAEMS.Application.Features.Programs.Queries.GetProgramById;
 using MAEMS.Application.Features.Programs.Queries.GetProgramsBasicByFilter;
+using MAEMS.Application.DTOs.Program;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -113,6 +116,43 @@ public class ProgramsController : ControllerBase
         {
             return BadRequest(result);
         }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a new program (admin only)
+    /// </summary>
+    /// <param name="request">Program information</param>
+    /// <returns>Created program</returns>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateProgram([FromBody] CreateProgramCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Patch program (admin only) - partial update
+    /// </summary>
+    /// <param name="id">Program ID</param>
+    /// <param name="request">Fields to update (only provided fields will be updated)</param>
+    /// <returns>Updated program</returns>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchProgram(int id, [FromBody] PatchProgramCommand command)
+    {
+        command.ProgramId = id;
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return NotFound(result);
 
         return Ok(result);
     }
