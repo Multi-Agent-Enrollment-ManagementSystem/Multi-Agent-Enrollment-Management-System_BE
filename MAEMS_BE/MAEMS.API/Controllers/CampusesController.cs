@@ -1,8 +1,11 @@
+using MAEMS.Application.Features.Campuses.Commands.CreateCampus;
+using MAEMS.Application.Features.Campuses.Commands.PatchCampus;
 using MAEMS.Application.Features.Campuses.Queries.GetActiveCampuses;
 using MAEMS.Application.Features.Campuses.Queries.GetActiveCampusesBasic;
 using MAEMS.Application.Features.Campuses.Queries.GetAllCampuses;
 using MAEMS.Application.Features.Campuses.Queries.GetCampusById;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MAEMS.API.Controllers;
@@ -87,6 +90,38 @@ public class CampusesController : ControllerBase
         {
             return BadRequest(result);
         }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create a new campus (admin only)
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateCampus([FromBody] CreateCampusCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Patch campus (admin only) - partial update
+    /// </summary>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchCampus(int id, [FromBody] PatchCampusCommand command)
+    {
+        command.CampusId = id;
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return NotFound(result);
 
         return Ok(result);
     }
