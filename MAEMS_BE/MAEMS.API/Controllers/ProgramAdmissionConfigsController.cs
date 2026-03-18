@@ -1,8 +1,11 @@
+using MAEMS.Application.Features.ProgramAdmissionConfigs.Commands.CreateProgramAdmissionConfig;
+using MAEMS.Application.Features.ProgramAdmissionConfigs.Commands.PatchProgramAdmissionConfig;
 using MAEMS.Application.Features.ProgramAdmissionConfigs.Queries.GetAllProgramAdmissionConfigs;
 using MAEMS.Application.Features.ProgramAdmissionConfigs.Queries.GetActiveProgramAdmissionConfigs;
 using MAEMS.Application.Features.ProgramAdmissionConfigs.Queries.GetProgramAdmissionConfigById;
 using MAEMS.Application.Features.ProgramAdmissionConfigs.Queries.GetProgramAdmissionConfigsByFilter;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MAEMS.API.Controllers;
@@ -85,6 +88,38 @@ public class ProgramAdmissionConfigsController : ControllerBase
 
         if (!result.Success)
             return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create program admission config (admin only)
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateProgramAdmissionConfig([FromBody] CreateProgramAdmissionConfigCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Patch program admission config (admin only) - partial update
+    /// </summary>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchProgramAdmissionConfig(int id, [FromBody] PatchProgramAdmissionConfigCommand command)
+    {
+        command.ConfigId = id;
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return NotFound(result);
 
         return Ok(result);
     }
