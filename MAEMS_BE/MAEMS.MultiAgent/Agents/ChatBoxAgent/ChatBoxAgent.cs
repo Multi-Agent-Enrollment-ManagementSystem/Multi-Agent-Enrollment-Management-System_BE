@@ -2,6 +2,7 @@ using MAEMS.Application.Interfaces;
 using MAEMS.Infrastructure.Models;
 using MAEMS.Infrastructure.Repositories;
 using MAEMS.Infrastructure.Services;
+using MAEMS.MultiAgent.RAG.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -9,24 +10,27 @@ namespace MAEMS.MultiAgent.Agents;
 
 /// <summary>
 /// ChatBox Agent - Xử lý câu hỏi từ thí sinh về quy chế tuyển sinh
-/// Sử dụng Gemini API để trả lời dựa vào hệ thống prompt và lịch sử chat
+/// Sử dụng Gemini API + RAG để trả lời dựa vào knowledge base, history chat
 /// </summary>
 public sealed class ChatBoxAgent : IChatBoxAgent
 {
     private readonly IGeminiService _geminiService;
     private readonly ILlmChatLogRepository _chatLogRepository;
     private readonly postgresContext _dbContext;
+    private readonly IRagRetrievalService _ragRetrievalService;
     private readonly ILogger<ChatBoxAgent> _logger;
 
     public ChatBoxAgent(
         IGeminiService geminiService,
         ILlmChatLogRepository chatLogRepository,
         postgresContext dbContext,
+        IRagRetrievalService ragRetrievalService,
         ILogger<ChatBoxAgent> logger)
     {
         _geminiService = geminiService;
         _chatLogRepository = chatLogRepository;
         _dbContext = dbContext;
+        _ragRetrievalService = ragRetrievalService;
         _logger = logger;
     }
 
@@ -39,20 +43,39 @@ public sealed class ChatBoxAgent : IChatBoxAgent
 
         try
         {
-            // 1. Build system prompt with admission rules context
-            var systemPrompt = await BuildSystemPromptAsync(cancellationToken);
+            // 1. Try to retrieve relevant documents from RAG system
+            string ragContext = "No relevant information found.";
+            try
+            {
+                _logger.LogInformation("Starting RAG retrieval for query: {Query}", userQuery);
+                ragContext = await _ragRetrievalService.RetrieveAsContextAsync(
+                    userQuery,
+                    topK: 5,
+                    cancellationToken);
+                _logger.LogInformation("RAG retrieval completed. Context length: {Length} characters", ragContext.Length);
+                _logger.LogDebug("RAG Context: {RagContext}", ragContext);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "RAG retrieval failed, will use DB-only approach");
+                ragContext = ""; // Will trigger fallback to DB-only in prompt building
+            }
 
-            // 2. Get conversation history (last 5 messages)
+            // 2. Build system prompt with RAG context + admission rules
+            var systemPrompt = await BuildSystemPromptWithRagAsync(ragContext, cancellationToken);
+            _logger.LogDebug("System prompt built. Prompt length: {Length} characters", systemPrompt.Length);
+
+            // 3. Get conversation history (last 5 messages)
             var conversationHistory = await GetConversationHistoryAsync(userId, 5, cancellationToken);
 
-            // 3. Call Gemini API
+            // 4. Call Gemini API
             var llmResponse = await _geminiService.GetResponseAsync(
                 userQuery,
                 conversationHistory,
                 systemPrompt,
                 cancellationToken);
 
-            // 4. Save to database
+            // 5. Save to database
             var chatLog = new LlmChatLog
             {
                 UserId = userId,
@@ -75,7 +98,99 @@ public sealed class ChatBoxAgent : IChatBoxAgent
         }
     }
 
-         private async Task<string> BuildSystemPromptAsync(CancellationToken cancellationToken = default)
+    private async Task<string> BuildSystemPromptWithRagAsync(string ragContext, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Lấy thông tin về các chương trình tuyển sinh từ DB
+            var programs = await _dbContext.Programs
+                .Where(p => p.IsActive == true)
+                .Select(p => new { p.ProgramName, p.Description })
+                .Take(20)
+                .ToListAsync(cancellationToken);
+
+            var majors = await _dbContext.Majors
+                .Where(m => m.IsActive == true)
+                .Select(m => new { m.MajorName })
+                .Take(30)
+                .ToListAsync(cancellationToken);
+
+            var admissionTypes = await _dbContext.AdmissionTypes
+                .Where(a => a.IsActive == true)
+                .Select(a => new { a.AdmissionTypeName, a.Type })
+                .ToListAsync(cancellationToken);
+
+            var programsText = string.Join("\n", programs.Select(p => $"- {p.ProgramName}: {p.Description}"));
+            var majorsText = string.Join(", ", majors.Select(m => m.MajorName));
+            var admissionTypesText = string.Join("\n", admissionTypes.Select(a =>
+                $"- {a.AdmissionTypeName} ({a.Type})"));
+
+            var systemPrompt = $@"Bạn là chatbot tư vấn tuyển sinh của Trường Đại học.
+
+**THÔNG TIN HỆ THỐNG TUYỂN SINH**
+Năm học hiện tại: {DateTime.Now.Year}
+
+**Các chương trình tuyển sinh:**
+{(string.IsNullOrWhiteSpace(programsText) ? "- Các chương trình sẽ được cập nhật sớm" : programsText)}
+
+**Các ngành học:**
+{(string.IsNullOrWhiteSpace(majorsText) ? "- Các ngành sẽ được cập nhật sớm" : majorsText)}
+
+**Phương thức xét tuyển:**
+{(string.IsNullOrWhiteSpace(admissionTypesText) ? "- Các phương thức sẽ được cập nhật sớm" : admissionTypesText)}
+
+**LIÊN HỆ HỖ TRỢ TUYỂN SINH**
+- Hotline: 1900-1234-567 (Mở 8:00 - 17:00, Thứ 2 - Thứ 6)
+- Email: tuyen.sinh@university.edu.vn
+- Website: https://admissions.university.edu.vn
+- Địa chỉ: 123 Đường Tuyển Sinh, TP. Hồ Chí Minh
+
+**THÔNG TIN CHUYÊN SÂU TỪ HỆ THỐNG**
+{(string.IsNullOrWhiteSpace(ragContext) ? "(Đang sử dụng DB-only mode)" : ragContext)}
+
+**HƯỚNG DẪN HOẠT ĐỘNG**
+1. Bạn là trợ lý tư vấn tuyển sinh thân thiện và chuyên nghiệp
+2. Sử dụng thông tin từ hệ thống RAG (ở trên) để trả lời câu hỏi chính xác
+3. Trả lời câu hỏi về:
+   - Các ngành học và chương trình tuyển sinh
+   - Điều kiện tuyển sinh cho từng phương thức
+   - Yêu cầu tài liệu cần nộp
+   - Quy trình nộp hồ sơ online
+   - Thời gian công bố kết quả
+   - Các chính sách đặc biệt (ưu tiên, xét tuyển bổ sung...)
+   - Thông tin về học phí và hỗ trợ tài chính
+
+4. Khi trả lời:
+   - Sử dụng ngôn ngữ Tiếng Việt, thân thiện và dễ hiểu
+   - Cung cấp thông tin chi tiết và chính xác từ knowledge base
+   - Nếu thí sinh hỏi về tài liệu, hãy liệt kê đầy đủ
+   - Khuyến khích thí sinh nộp hồ sơ sớm để tránh chậm trễ
+   - **Luôn kết thúc bằng cách cung cấp liên hệ hỗ trợ (hotline/email/website)**
+
+5. Các câu hỏi ngoài lĩnh vực tuyển sinh:
+   - Từ chối lịch sự: ""Xin lỗi, tôi chỉ có thể tư vấn về tuyển sinh. Vui lòng liên hệ với phòng tuyển sinh để được hỗ trợ thêm. Hotline: 1900-1234-567 hoặc email: tuyen.sinh@university.edu.vn""
+
+6. Nếu không biết thông tin từ knowledge base:
+   - Gợi ý: ""Vui lòng gọi hotline tư vấn tuyển sinh (1900-1234-567) hoặc truy cập website https://admissions.university.edu.vn để cập nhật thông tin mới nhất. Email hỗ trợ: tuyen.sinh@university.edu.vn""
+
+**LƯU Ý QUAN TRỌNG**
+- Luôn khuyến khích thí sinh làm theo quy trình chính thức
+- Cung cấp liên hệ hotline khi cần hỗ trợ thêm
+- Không đưa ra quyết định cuối cùng về tuyển sinh (chỉ là tư vấn)
+- Ưu tiên sử dụng thông tin từ knowledge base thay vì thông tin chung chung
+- **Khi kết thúc, gợi ý thí sinh liên hệ để được hỗ trợ thêm**";
+
+            return systemPrompt;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error building system prompt with RAG");
+            // Fallback to basic prompt without RAG context
+            return await BuildSystemPromptAsync(cancellationToken);
+        }
+    }
+
+    private async Task<string> BuildSystemPromptAsync(CancellationToken cancellationToken = default)
          {
              try
              {
@@ -97,7 +212,7 @@ public sealed class ChatBoxAgent : IChatBoxAgent
                      .Select(a => new { a.AdmissionTypeName, a.Type })
                      .ToListAsync(cancellationToken);
 
-                
+
                  var programsText = string.Join("\n", programs.Select(p => $"- {p.ProgramName}: {p.Description}"));
                  var majorsText = string.Join(", ", majors.Select(m => m.MajorName));
                  var admissionTypesText = string.Join("\n", admissionTypes.Select(a =>

@@ -1,5 +1,7 @@
 using MAEMS.Application.Interfaces;
 using MAEMS.MultiAgent.Agents;
+using MAEMS.MultiAgent.RAG.Interfaces;
+using MAEMS.MultiAgent.RAG.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -37,6 +39,19 @@ public static class DependencyInjection
         // ChatBoxAgent — handle Q&A about admission requirements
         // Uses Application.Interfaces.IChatBoxAgent interface (not the one in MultiAgent.Agents)
         services.AddScoped<IChatBoxAgent, ChatBoxAgent>();
+
+        // RAG Services - Use factory to create scoped instances from singleton BackgroundService
+        services.AddScoped<IRagDocumentLoader, RagDocumentLoader>();
+        services.AddHttpClient<IRagEmbeddingService, RagEmbeddingService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+        });
+        services.AddHttpClient<IRagVectorStore, RagVectorStore>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        services.AddScoped<IRagRetrievalService, RagRetrievalService>();
+        services.AddHostedService<RagInitializerService>();
 
         return services;
     }
