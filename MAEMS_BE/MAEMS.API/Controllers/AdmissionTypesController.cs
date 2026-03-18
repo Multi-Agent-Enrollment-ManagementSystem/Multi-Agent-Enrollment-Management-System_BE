@@ -1,8 +1,11 @@
+using MAEMS.Application.Features.AdmissionTypes.Commands.CreateAdmissionType;
+using MAEMS.Application.Features.AdmissionTypes.Commands.PatchAdmissionType;
 using MAEMS.Application.Features.AdmissionTypes.Queries.GetAdmissionTypesBasicByFilter;
 using MAEMS.Application.Features.AdmissionTypes.Queries.GetAllAdmissionTypes;
 using MAEMS.Application.Features.AdmissionTypes.Queries.GetActiveAdmissionTypes;
 using MAEMS.Application.Features.AdmissionTypes.Queries.GetAdmissionTypeById;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace MAEMS.API.Controllers;
@@ -88,6 +91,38 @@ public class AdmissionTypesController : ControllerBase
         {
             return BadRequest(result);
         }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Create admission type (admin only)
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> CreateAdmissionType([FromBody] CreateAdmissionTypeCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Patch admission type (admin only) - partial update
+    /// </summary>
+    [HttpPatch("{id}")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> PatchAdmissionType(int id, [FromBody] PatchAdmissionTypeCommand command)
+    {
+        command.AdmissionTypeId = id;
+
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+            return NotFound(result);
 
         return Ok(result);
     }
