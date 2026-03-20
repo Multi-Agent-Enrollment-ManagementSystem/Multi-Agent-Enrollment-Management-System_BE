@@ -243,6 +243,7 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.Status)
                 .HasMaxLength(50)
                 .HasColumnName("status");
+            entity.Property(e => e.Thumbnail).HasColumnName("thumbnail");
             entity.Property(e => e.Title)
                 .IsRequired()
                 .HasMaxLength(255)
