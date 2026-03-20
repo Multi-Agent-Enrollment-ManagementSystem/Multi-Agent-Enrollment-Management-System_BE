@@ -253,4 +253,90 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
             EnrollmentYear = infraApplication.Config?.AdmissionType?.EnrollmentYear?.Year
         };
     }
+
+    public async Task<(IReadOnlyList<DomainApplication> Items, int TotalCount)> GetApplicationsPagedAsync(
+        int? programId,
+        int? campusId,
+        int? admissionTypeId,
+        string? status,
+        bool? requiresReview,
+        int? assignedOfficerId,
+        string? search,
+        string? sortBy,
+        bool sortDesc,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.Applications
+            .AsNoTracking()
+            .Include(a => a.Applicant)
+            .Include(a => a.Config)
+                .ThenInclude(c => c.Program)
+            .Include(a => a.Config)
+                .ThenInclude(c => c.Campus)
+            .Include(a => a.Config)
+                .ThenInclude(c => c.AdmissionType)
+                    .ThenInclude(at => at.EnrollmentYear)
+            .Include(a => a.AssignedOfficer)
+            .AsQueryable();
+
+        if (programId.HasValue)
+            query = query.Where(a => a.Config!.ProgramId == programId.Value);
+
+        if (campusId.HasValue)
+            query = query.Where(a => a.Config!.CampusId == campusId.Value);
+
+        if (admissionTypeId.HasValue)
+            query = query.Where(a => a.Config!.AdmissionTypeId == admissionTypeId.Value);
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(a => a.Status == status);
+
+        if (requiresReview.HasValue)
+            query = query.Where(a => a.RequiresReview == requiresReview.Value);
+
+        if (assignedOfficerId.HasValue)
+            query = query.Where(a => a.AssignedOfficerId == assignedOfficerId.Value);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(a =>
+                EF.Functions.ILike(a.Applicant!.FullName!, $"%{search}%") ||
+                EF.Functions.ILike(a.Config!.Program!.ProgramName!, $"%{search}%") ||
+                EF.Functions.ILike(a.Config!.Campus!.Name!, $"%{search}%") ||
+                EF.Functions.ILike(a.Config!.AdmissionType!.AdmissionTypeName!, $"%{search}%") ||
+                EF.Functions.ILike(a.AssignedOfficer!.Username!, $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "applicationId" : sortBy.Trim();
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "applicationid" => sortDesc ? query.OrderByDescending(x => x.ApplicationId) : query.OrderBy(x => x.ApplicationId),
+            "status" => sortDesc ? query.OrderByDescending(x => x.Status) : query.OrderBy(x => x.Status),
+            "submittedat" => sortDesc ? query.OrderByDescending(x => x.SubmittedAt) : query.OrderBy(x => x.SubmittedAt),
+            "lastupdated" => sortDesc ? query.OrderByDescending(x => x.LastUpdated) : query.OrderBy(x => x.LastUpdated),
+            "requiresreview" => sortDesc ? query.OrderByDescending(x => x.RequiresReview) : query.OrderBy(x => x.RequiresReview),
+            "programname" => sortDesc ? query.OrderByDescending(x => x.Config!.Program!.ProgramName) : query.OrderBy(x => x.Config!.Program!.ProgramName),
+            "campusname" => sortDesc ? query.OrderByDescending(x => x.Config!.Campus!.Name) : query.OrderBy(x => x.Config!.Campus!.Name),
+            "admissiontypename" => sortDesc ? query.OrderByDescending(x => x.Config!.AdmissionType!.AdmissionTypeName) : query.OrderBy(x => x.Config!.AdmissionType!.AdmissionTypeName),
+            "applicantname" => sortDesc ? query.OrderByDescending(x => x.Applicant!.FullName) : query.OrderBy(x => x.Applicant!.FullName),
+            "assignedofficername" => sortDesc ? query.OrderByDescending(x => x.AssignedOfficer!.Username) : query.OrderBy(x => x.AssignedOfficer!.Username),
+            _ => sortDesc ? query.OrderByDescending(x => x.ApplicationId) : query.OrderBy(x => x.ApplicationId)
+        };
+
+        var skip = (pageNumber - 1) * pageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items.Select(MapToDomain).ToList(), totalCount);
+    }
 }

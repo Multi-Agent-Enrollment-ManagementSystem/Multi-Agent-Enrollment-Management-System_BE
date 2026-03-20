@@ -140,10 +140,33 @@ public class ApplicationsController : ControllerBase
     //}
     [HttpGet("all")]
     [Authorize(Roles = "officer,admin")]
-    public async Task<IActionResult> GetAllFullApplications()
+    public async Task<IActionResult> GetAllFullApplications(
+        [FromQuery] int? programId,
+        [FromQuery] int? campusId,
+        [FromQuery] int? admissionTypeId,
+        [FromQuery] string? status,
+        [FromQuery] bool? requiresReview,
+        [FromQuery] int? assignedOfficerId,
+        [FromQuery] string? search,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortDesc = false,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
     {
-         var result = await _mediator.Send(new GetAllFullApplicationsQuery());
-         return Ok(result);
+        var result = await _mediator.Send(new GetAllFullApplicationsQuery(
+            programId,
+            campusId,
+            admissionTypeId,
+            status,
+            requiresReview,
+            assignedOfficerId,
+            search,
+            sortBy,
+            sortDesc,
+            pageNumber,
+            pageSize));
+
+        return Ok(result);
     }
 
     /// <summary>
