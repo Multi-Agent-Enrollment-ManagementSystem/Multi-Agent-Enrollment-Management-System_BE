@@ -152,4 +152,113 @@ public class ProgramRepository : BaseRepository, IProgramRepository
             CreatedAt = infraProgram.CreatedAt
         };
     }
+
+    public async Task<(IReadOnlyList<DomainProgram> Items, int TotalCount)> GetProgramsBasicByFilterPagedAsync(
+        int? majorId,
+        string? searchName,
+        string? sortBy,
+        bool sortDesc,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        // Defensive defaults
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.Programs
+            .AsNoTracking()
+            .Include(p => p.Major)
+            .Where(p => p.IsActive == true);
+
+        if (majorId.HasValue)
+        {
+            query = query.Where(p => p.MajorId == majorId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchName))
+        {
+            // Use ILIKE on PostgreSQL
+            query = query.Where(p => EF.Functions.ILike(p.ProgramName!, $"%{searchName}%"));
+        }
+
+        // Total count BEFORE paging
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        // Sorting (SQL)
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "programId" : sortBy.Trim();
+        query = (sortBy.ToLowerInvariant()) switch
+        {
+            "programid" => sortDesc ? query.OrderByDescending(x => x.ProgramId) : query.OrderBy(x => x.ProgramId),
+            "majorname" => sortDesc ? query.OrderByDescending(x => x.Major!.MajorName) : query.OrderBy(x => x.Major!.MajorName),
+            "programname" or _ => sortDesc ? query.OrderByDescending(x => x.ProgramName) : query.OrderBy(x => x.ProgramName)
+        };
+
+        // Paging (SQL)
+        var skip = (pageNumber - 1) * pageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items.Select(MapToDomain).ToList(), totalCount);
+    }
+
+    public async Task<(IReadOnlyList<DomainProgram> Items, int TotalCount)> GetProgramsPagedAsync(
+        int? majorId,
+        int? enrollmentYearId,
+        string? search,
+        string? sortBy,
+        bool sortDesc,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.Programs
+            .AsNoTracking()
+            .Include(p => p.Major)
+            .Include(p => p.EnrollmentYear)
+            .AsQueryable();
+
+        if (majorId.HasValue)
+        {
+            query = query.Where(p => p.MajorId == majorId.Value);
+        }
+
+        if (enrollmentYearId.HasValue)
+        {
+            query = query.Where(p => p.EnrollmentYearId == enrollmentYearId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(p => EF.Functions.ILike(p.ProgramName!, $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "programId" : sortBy.Trim();
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "programid" => sortDesc ? query.OrderByDescending(x => x.ProgramId) : query.OrderBy(x => x.ProgramId),
+            "programname" => sortDesc ? query.OrderByDescending(x => x.ProgramName) : query.OrderBy(x => x.ProgramName),
+            "majorname" => sortDesc ? query.OrderByDescending(x => x.Major!.MajorName) : query.OrderBy(x => x.Major!.MajorName),
+            "enrollmentyear" => sortDesc ? query.OrderByDescending(x => x.EnrollmentYear!.Year) : query.OrderBy(x => x.EnrollmentYear!.Year),
+            "isactive" => sortDesc ? query.OrderByDescending(x => x.IsActive) : query.OrderBy(x => x.IsActive),
+            _ => sortDesc ? query.OrderByDescending(x => x.ProgramId) : query.OrderBy(x => x.ProgramId)
+        };
+
+        var skip = (pageNumber - 1) * pageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items.Select(MapToDomain).ToList(), totalCount);
+    }
 }

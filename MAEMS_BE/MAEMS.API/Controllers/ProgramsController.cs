@@ -5,7 +5,6 @@ using MAEMS.Application.Features.Programs.Queries.GetActiveProgramsBasic;
 using MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 using MAEMS.Application.Features.Programs.Queries.GetProgramById;
 using MAEMS.Application.Features.Programs.Queries.GetProgramsBasicByFilter;
-using MAEMS.Application.DTOs.Program;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -24,17 +23,28 @@ public class ProgramsController : ControllerBase
     }
 
     /// <summary>
-    /// Get all programs with major name (optional filter by majorId and/or enrollmentYearId)
+    /// Get all programs with major name (optional filter by majorId and/or enrollmentYearId), with SQL-level sort & paging
     /// </summary>
     /// <param name="majorId">Optional major ID to filter programs</param>
     /// <param name="enrollmentYearId">Optional enrollment year ID to filter programs</param>
-    /// <returns>List of programs</returns>
+    /// <param name="search">Optional search term (matches programName)</param>
+    /// <param name="sortBy">Sort field (allowed: programId [default], programName, majorName, enrollmentYear, isActive)</param>
+    /// <param name="sortDesc">Sort descending (default false)</param>
+    /// <param name="pageNumber">Page number (default 1)</param>
+    /// <param name="pageSize">Page size (default 20, max 100)</param>
+    /// <returns>Paged list of programs</returns>
     [HttpGet]
     [Authorize(Roles = "admin")]
-
-    public async Task<IActionResult> GetAllPrograms([FromQuery] int? majorId, [FromQuery] int? enrollmentYearId)
+    public async Task<IActionResult> GetAllPrograms(
+        [FromQuery] int? majorId,
+        [FromQuery] int? enrollmentYearId,
+        [FromQuery] string? search,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortDesc = false,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var query = new GetAllProgramsQuery(majorId, enrollmentYearId);
+        var query = new GetAllProgramsQuery(majorId, enrollmentYearId, search, sortBy, sortDesc, pageNumber, pageSize);
         var result = await _mediator.Send(query);
 
         if (!result.Success)
@@ -101,15 +111,25 @@ public class ProgramsController : ControllerBase
     }
 
     /// <summary>
-    /// Get programs basic info filtered by major id and/or search name
+    /// Get programs basic info filtered by major id and/or search name, with SQL-level sort & paging
     /// </summary>
     /// <param name="majorId">Optional major ID to filter programs</param>
     /// <param name="searchName">Optional search term to filter by program name</param>
-    /// <returns>List of programs with basic info matching the filters</returns>
+    /// <param name="sortBy">Sort field (allowed: programId [default], programName, majorName)</param>
+    /// <param name="sortDesc">Sort descending (default false)</param>
+    /// <param name="pageNumber">Page number (default 1)</param>
+    /// <param name="pageSize">Page size (default 20, max 100)</param>
+    /// <returns>Paged list of programs with basic info matching the filters</returns>
     [HttpGet("basic/filter")]
-    public async Task<IActionResult> GetProgramsBasicByFilter([FromQuery] int? majorId, [FromQuery] string? searchName)
+    public async Task<IActionResult> GetProgramsBasicByFilter(
+        [FromQuery] int? majorId,
+        [FromQuery] string? searchName,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortDesc = false,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var query = new GetProgramsBasicByFilterQuery(majorId, searchName);
+        var query = new GetProgramsBasicByFilterQuery(majorId, searchName, sortBy, sortDesc, pageNumber, pageSize);
         var result = await _mediator.Send(query);
 
         if (!result.Success)
@@ -123,7 +143,7 @@ public class ProgramsController : ControllerBase
     /// <summary>
     /// Create a new program (admin only)
     /// </summary>
-    /// <param name="request">Program information</param>
+    /// <param name="command">Program information</param>
     /// <returns>Created program</returns>
     [HttpPost]
     [Authorize(Roles = "admin")]
@@ -141,7 +161,7 @@ public class ProgramsController : ControllerBase
     /// Patch program (admin only) - partial update
     /// </summary>
     /// <param name="id">Program ID</param>
-    /// <param name="request">Fields to update (only provided fields will be updated)</param>
+    /// <param name="command">Fields to update (only provided fields will be updated)</param>
     /// <returns>Updated program</returns>
     [HttpPatch("{id}")]
     [Authorize(Roles = "admin")]
