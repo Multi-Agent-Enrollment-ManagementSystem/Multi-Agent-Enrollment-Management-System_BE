@@ -1,4 +1,5 @@
 using AutoMapper;
+using MAEMS.Application.DTOs.Common;
 using MAEMS.Application.DTOs.User;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
@@ -6,7 +7,7 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Users.Queries.GetAllUsers;
 
-public class GetAllUsersQueryHandler : IRequestHandler<GetAllUsersQuery, BaseResponse<IEnumerable<UserDto>>>
+public class GetAllUsersQueryHandler : IRequestHandler<GetAllUsersQuery, BaseResponse<PagedResponse<UserDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
@@ -17,16 +18,18 @@ public class GetAllUsersQueryHandler : IRequestHandler<GetAllUsersQuery, BaseRes
         _mapper = mapper;
     }
 
-    public async Task<BaseResponse<IEnumerable<UserDto>>> Handle(GetAllUsersQuery request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<PagedResponse<UserDto>>> Handle(GetAllUsersQuery request, CancellationToken cancellationToken)
     {
         try
         {
-            var users = (await _unitOfWork.Users.GetAllAsync()).ToList();
-
-            if (request.RoleId.HasValue)
-            {
-                users = users.Where(u => u.RoleId == request.RoleId.Value).ToList();
-            }
+            var (users, totalCount) = await _unitOfWork.Users.GetUsersPagedAsync(
+                request.RoleId,
+                request.Search,
+                request.SortBy,
+                request.SortDesc,
+                request.PageNumber,
+                request.PageSize,
+                cancellationToken);
 
             // Preload roles to avoid N+1 queries
             var roles = (await _unitOfWork.Roles.GetAllAsync())
@@ -42,14 +45,22 @@ public class GetAllUsersQueryHandler : IRequestHandler<GetAllUsersQuery, BaseRes
                 }
             }
 
-            return BaseResponse<IEnumerable<UserDto>>.SuccessResponse(
-                dtos,
-                $"Users retrieved successfully. Found {dtos.Count} user(s)."
+            var paged = new PagedResponse<UserDto>
+            {
+                Items = dtos,
+                TotalCount = totalCount,
+                PageNumber = request.PageNumber < 1 ? 1 : request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            return BaseResponse<PagedResponse<UserDto>>.SuccessResponse(
+                paged,
+                $"Users retrieved successfully. Found {totalCount} user(s)."
             );
         }
         catch (Exception ex)
         {
-            return BaseResponse<IEnumerable<UserDto>>.FailureResponse(
+            return BaseResponse<PagedResponse<UserDto>>.FailureResponse(
                 "Error retrieving users",
                 new List<string> { ex.Message }
             );
