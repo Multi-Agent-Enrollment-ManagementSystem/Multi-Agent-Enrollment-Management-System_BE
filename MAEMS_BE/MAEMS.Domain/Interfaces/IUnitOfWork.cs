@@ -16,6 +16,8 @@ public interface IUnitOfWork : IDisposable
 
     IAgentLogRepository AgentLogs { get; }
 
+    IArticleRepository Articles { get; }
+
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitTransactionAsync();

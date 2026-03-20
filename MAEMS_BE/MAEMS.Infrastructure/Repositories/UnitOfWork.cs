@@ -27,6 +27,7 @@ public class UnitOfWork : IUnitOfWork
     public IProgramAdmissionConfigRepository ProgramAdmissionConfigs => new ProgramAdmissionConfigRepository(_context);
     public IEnrollmentYearRepository EnrollmentYears => new EnrollmentYearRepository(_context);
     public IAgentLogRepository AgentLogs => new AgentLogRepository(_context);
+    public IArticleRepository Articles => new ArticleRepository(_context);
 
     public async Task<int> SaveChangesAsync()
     {
