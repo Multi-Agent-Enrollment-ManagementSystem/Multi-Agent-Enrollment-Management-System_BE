@@ -22,13 +22,38 @@ public class ProgramAdmissionConfigsController : ControllerBase
     }
 
     /// <summary>
-    /// Get all program admission configs with ProgramName, CampusName and AdmissionTypeName
+    /// Get all program admission configs with ProgramName, CampusName and AdmissionTypeName, with SQL-level sort & paging
     /// </summary>
-    /// <returns>List of all program admission configs</returns>
+    /// <param name="programId">Optional program ID to filter</param>
+    /// <param name="campusId">Optional campus ID to filter</param>
+    /// <param name="admissionTypeId">Optional admission type ID to filter</param>
+    /// <param name="search">Optional search term (matches program/campus/admissionType name)</param>
+    /// <param name="sortBy">Sort field (allowed: configId [default], programName, campusName, admissionTypeName, quota, isActive, createdAt)</param>
+    /// <param name="sortDesc">Sort descending (default false)</param>
+    /// <param name="pageNumber">Page number (default 1)</param>
+    /// <param name="pageSize">Page size (default 20, max 100)</param>
+    /// <returns>Paged list of program admission configs</returns>
     [HttpGet]
-    public async Task<IActionResult> GetAllProgramAdmissionConfigs()
+    public async Task<IActionResult> GetAllProgramAdmissionConfigs(
+        [FromQuery] int? programId,
+        [FromQuery] int? campusId,
+        [FromQuery] int? admissionTypeId,
+        [FromQuery] string? search,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortDesc = false,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var query = new GetAllProgramAdmissionConfigsQuery();
+        var query = new GetAllProgramAdmissionConfigsQuery(
+            programId,
+            campusId,
+            admissionTypeId,
+            search,
+            sortBy,
+            sortDesc,
+            pageNumber,
+            pageSize);
+
         var result = await _mediator.Send(query);
 
         if (!result.Success)

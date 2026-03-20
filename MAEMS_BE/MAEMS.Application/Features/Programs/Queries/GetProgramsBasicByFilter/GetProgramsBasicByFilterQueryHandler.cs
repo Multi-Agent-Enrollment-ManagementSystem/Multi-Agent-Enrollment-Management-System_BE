@@ -1,4 +1,5 @@
 using AutoMapper;
+using MAEMS.Application.DTOs.Common;
 using MAEMS.Application.DTOs.Program;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
@@ -6,7 +7,7 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Programs.Queries.GetProgramsBasicByFilter;
 
-public class GetProgramsBasicByFilterQueryHandler : IRequestHandler<GetProgramsBasicByFilterQuery, BaseResponse<IEnumerable<ProgramBasicDto>>>
+public class GetProgramsBasicByFilterQueryHandler : IRequestHandler<GetProgramsBasicByFilterQuery, BaseResponse<PagedResponse<ProgramBasicDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
@@ -17,59 +18,51 @@ public class GetProgramsBasicByFilterQueryHandler : IRequestHandler<GetProgramsB
         _mapper = mapper;
     }
 
-    public async Task<BaseResponse<IEnumerable<ProgramBasicDto>>> Handle(GetProgramsBasicByFilterQuery request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<PagedResponse<ProgramBasicDto>>> Handle(GetProgramsBasicByFilterQuery request, CancellationToken cancellationToken)
     {
         try
         {
-            IEnumerable<MAEMS.Domain.Entities.Program> programs;
+            var (items, totalCount) = await _unitOfWork.Programs.GetProgramsBasicByFilterPagedAsync(
+                request.MajorId,
+                request.SearchName,
+                request.SortBy,
+                request.SortDesc,
+                request.PageNumber,
+                request.PageSize,
+                cancellationToken);
 
-            // Filter by MajorId if provided
-            if (request.MajorId.HasValue)
+            // Map domain -> dto. MajorName is not in domain; use MajorId lookup only if needed.
+            // Current domain Program doesn't carry Major navigation, so we do lightweight mapping here.
+            var dtos = new List<ProgramBasicDto>(items.Count);
+            foreach (var program in items)
             {
-                programs = await _unitOfWork.Programs.GetProgramsByMajorIdAsync(request.MajorId.Value);
-                // Filter only active programs
-                programs = programs.Where(p => p.IsActive == true);
-            }
-            else
-            {
-                // Get all active programs if no major filter
-                programs = await _unitOfWork.Programs.GetActiveProgramsAsync();
-            }
+                var dto = _mapper.Map<ProgramBasicDto>(program);
 
-            // Filter by SearchName if provided
-            if (!string.IsNullOrWhiteSpace(request.SearchName))
-            {
-                programs = programs.Where(p => 
-                    p.ProgramName.Contains(request.SearchName, StringComparison.OrdinalIgnoreCase));
-            }
-
-            var programDtos = new List<ProgramBasicDto>();
-
-            foreach (var program in programs)
-            {
-                var programDto = _mapper.Map<ProgramBasicDto>(program);
-                
-                // Get major name if MajorId exists
                 if (program.MajorId.HasValue)
                 {
                     var major = await _unitOfWork.Majors.GetByIdAsync(program.MajorId.Value);
-                    programDto.MajorName = major?.MajorName ?? string.Empty;
-                }
-                else
-                {
-                    programDto.MajorName = string.Empty;
+                    dto.MajorName = major?.MajorName ?? string.Empty;
                 }
 
-                programDtos.Add(programDto);
+                dtos.Add(dto);
             }
 
-            return BaseResponse<IEnumerable<ProgramBasicDto>>.SuccessResponse(
-                programDtos, 
-                $"Programs retrieved successfully. Found {programDtos.Count} program(s).");
+            var paged = new PagedResponse<ProgramBasicDto>
+            {
+                Items = dtos,
+                TotalCount = totalCount,
+                PageNumber = request.PageNumber < 1 ? 1 : request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            return BaseResponse<PagedResponse<ProgramBasicDto>>.SuccessResponse(
+                paged,
+                $"Programs retrieved successfully. Found {totalCount} program(s)."
+            );
         }
         catch (Exception ex)
         {
-            return BaseResponse<IEnumerable<ProgramBasicDto>>.FailureResponse(
+            return BaseResponse<PagedResponse<ProgramBasicDto>>.FailureResponse(
                 "Error retrieving programs",
                 new List<string> { ex.Message }
             );

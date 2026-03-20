@@ -1,4 +1,5 @@
 using AutoMapper;
+using MAEMS.Application.DTOs.Common;
 using MAEMS.Application.DTOs.Program;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
@@ -6,7 +7,7 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Programs.Queries.GetAllPrograms;
 
-public class GetAllProgramsQueryHandler : IRequestHandler<GetAllProgramsQuery, BaseResponse<IEnumerable<ProgramDto>>>
+public class GetAllProgramsQueryHandler : IRequestHandler<GetAllProgramsQuery, BaseResponse<PagedResponse<ProgramDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
@@ -17,39 +18,26 @@ public class GetAllProgramsQueryHandler : IRequestHandler<GetAllProgramsQuery, B
         _mapper = mapper;
     }
 
-    public async Task<BaseResponse<IEnumerable<ProgramDto>>> Handle(GetAllProgramsQuery request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<PagedResponse<ProgramDto>>> Handle(GetAllProgramsQuery request, CancellationToken cancellationToken)
     {
         try
         {
-            var programs = (await _unitOfWork.Programs.GetAllAsync()).ToList();
+            var (programs, totalCount) = await _unitOfWork.Programs.GetProgramsPagedAsync(
+                request.MajorId,
+                request.EnrollmentYearId,
+                request.Search,
+                request.SortBy,
+                request.SortDesc,
+                request.PageNumber,
+                request.PageSize,
+                cancellationToken);
 
-            if (request.MajorId.HasValue)
-            {
-                programs = programs.Where(p => p.MajorId == request.MajorId.Value).ToList();
-            }
-
-            if (request.EnrollmentYearId.HasValue)
-            {
-                var byYear = (await _unitOfWork.Programs.GetProgramsByEnrollmentYearIdAsync(request.EnrollmentYearId.Value)).ToList();
-
-                if (request.MajorId.HasValue)
-                {
-                    var yearIds = byYear.Select(p => p.ProgramId).ToHashSet();
-                    programs = programs.Where(p => yearIds.Contains(p.ProgramId)).ToList();
-                }
-                else
-                {
-                    programs = byYear;
-                }
-            }
-
-            var programDtos = new List<ProgramDto>();
+            var programDtos = new List<ProgramDto>(programs.Count);
 
             foreach (var program in programs)
             {
                 var programDto = _mapper.Map<ProgramDto>(program);
 
-                // Get major name if MajorId exists
                 if (program.MajorId.HasValue)
                 {
                     var major = await _unitOfWork.Majors.GetByIdAsync(program.MajorId.Value);
@@ -63,11 +51,19 @@ public class GetAllProgramsQueryHandler : IRequestHandler<GetAllProgramsQuery, B
                 programDtos.Add(programDto);
             }
 
-            return BaseResponse<IEnumerable<ProgramDto>>.SuccessResponse(programDtos, "Programs retrieved successfully");
+            var paged = new PagedResponse<ProgramDto>
+            {
+                Items = programDtos,
+                TotalCount = totalCount,
+                PageNumber = request.PageNumber < 1 ? 1 : request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            return BaseResponse<PagedResponse<ProgramDto>>.SuccessResponse(paged, "Programs retrieved successfully");
         }
         catch (Exception ex)
         {
-            return BaseResponse<IEnumerable<ProgramDto>>.FailureResponse(
+            return BaseResponse<PagedResponse<ProgramDto>>.FailureResponse(
                 "Error retrieving programs",
                 new List<string> { ex.Message }
             );

@@ -120,6 +120,55 @@ public class UserRepository : BaseRepository, IUserRepository
         return domainUsers.Any(predicate.Compile());
     }
 
+    public async Task<(IReadOnlyList<DomainUser> Items, int TotalCount)> GetUsersPagedAsync(
+        int? roleId,
+        string? search,
+        string? sortBy,
+        bool sortDesc,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.Users.AsNoTracking().AsQueryable();
+
+        if (roleId.HasValue)
+        {
+            query = query.Where(u => u.RoleId == roleId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Search on username/email
+            query = query.Where(u =>
+                EF.Functions.ILike(u.Username!, $"%{search}%") ||
+                EF.Functions.ILike(u.Email!, $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "userId" : sortBy.Trim();
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "userid" => sortDesc ? query.OrderByDescending(x => x.UserId) : query.OrderBy(x => x.UserId),
+            "username" => sortDesc ? query.OrderByDescending(x => x.Username) : query.OrderBy(x => x.Username),
+            "email" => sortDesc ? query.OrderByDescending(x => x.Email) : query.OrderBy(x => x.Email),
+            "createdat" => sortDesc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
+            _ => sortDesc ? query.OrderByDescending(x => x.UserId) : query.OrderBy(x => x.UserId)
+        };
+
+        var skip = (pageNumber - 1) * pageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items.Select(MapToDomain).ToList(), totalCount);
+    }
+
     private static DomainUser MapToDomain(InfraUser infraUser)
     {
         return new DomainUser
