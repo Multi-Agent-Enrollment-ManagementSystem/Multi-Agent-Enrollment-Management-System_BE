@@ -1,4 +1,5 @@
 using AutoMapper;
+using MAEMS.Application.DTOs.Common;
 using MAEMS.Application.DTOs.Major;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
@@ -6,7 +7,7 @@ using MediatR;
 
 namespace MAEMS.Application.Features.Majors.Queries.GetAllMajors;
 
-public class GetAllMajorsQueryHandler : IRequestHandler<GetAllMajorsQuery, BaseResponse<IEnumerable<MajorDto>>>
+public class GetAllMajorsQueryHandler : IRequestHandler<GetAllMajorsQuery, BaseResponse<PagedResponse<MajorDto>>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
@@ -17,19 +18,34 @@ public class GetAllMajorsQueryHandler : IRequestHandler<GetAllMajorsQuery, BaseR
         _mapper = mapper;
     }
 
-    public async Task<BaseResponse<IEnumerable<MajorDto>>> Handle(GetAllMajorsQuery request, CancellationToken cancellationToken)
+    public async Task<BaseResponse<PagedResponse<MajorDto>>> Handle(GetAllMajorsQuery request, CancellationToken cancellationToken)
     {
         try
         {
-            var majors = await _unitOfWork.Majors.GetAllAsync();
-            var majorDtos = _mapper.Map<IEnumerable<MajorDto>>(majors);
+            var (items, totalCount) = await _unitOfWork.Majors.GetMajorsPagedAsync(
+                request.Search,
+                request.SortBy,
+                request.SortDesc,
+                request.PageNumber,
+                request.PageSize,
+                cancellationToken);
 
-            return BaseResponse<IEnumerable<MajorDto>>.SuccessResponse(majorDtos, "Majors retrieved successfully");
+            var dtos = _mapper.Map<List<MajorDto>>(items);
+
+            var paged = new PagedResponse<MajorDto>
+            {
+                Items = dtos,
+                TotalCount = totalCount,
+                PageNumber = request.PageNumber < 1 ? 1 : request.PageNumber,
+                PageSize = request.PageSize
+            };
+
+            return BaseResponse<PagedResponse<MajorDto>>.SuccessResponse(paged, "Majors retrieved successfully");
         }
         catch (Exception ex)
         {
-            return BaseResponse<IEnumerable<MajorDto>>.FailureResponse(
-                "Error retrieving majors", 
+            return BaseResponse<PagedResponse<MajorDto>>.FailureResponse(
+                "Error retrieving majors",
                 new List<string> { ex.Message }
             );
         }
