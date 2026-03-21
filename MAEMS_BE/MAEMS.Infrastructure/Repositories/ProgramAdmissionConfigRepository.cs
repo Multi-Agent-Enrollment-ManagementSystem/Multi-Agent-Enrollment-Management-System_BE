@@ -147,6 +147,69 @@ public class ProgramAdmissionConfigRepository : BaseRepository, IProgramAdmissio
         return infraList.Select(MapToDomain).Any(predicate.Compile());
     }
 
+    public async Task<(IReadOnlyList<DomainConfig> Items, int TotalCount)> GetConfigsPagedAsync(
+        int? programId,
+        int? campusId,
+        int? admissionTypeId,
+        string? search,
+        string? sortBy,
+        bool sortDesc,
+        int pageNumber,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.ProgramAdmissionConfigs
+            .AsNoTracking()
+            .Include(c => c.Program)
+            .Include(c => c.Campus)
+            .Include(c => c.AdmissionType)
+            .AsQueryable();
+
+        if (programId.HasValue)
+            query = query.Where(c => c.ProgramId == programId.Value);
+
+        if (campusId.HasValue)
+            query = query.Where(c => c.CampusId == campusId.Value);
+
+        if (admissionTypeId.HasValue)
+            query = query.Where(c => c.AdmissionTypeId == admissionTypeId.Value);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(c =>
+                EF.Functions.ILike(c.Program!.ProgramName!, $"%{search}%") ||
+                EF.Functions.ILike(c.Campus!.Name!, $"%{search}%") ||
+                EF.Functions.ILike(c.AdmissionType!.AdmissionTypeName!, $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "configId" : sortBy.Trim();
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "configid" => sortDesc ? query.OrderByDescending(x => x.ConfigId) : query.OrderBy(x => x.ConfigId),
+            "programname" => sortDesc ? query.OrderByDescending(x => x.Program!.ProgramName) : query.OrderBy(x => x.Program!.ProgramName),
+            "campusname" => sortDesc ? query.OrderByDescending(x => x.Campus!.Name) : query.OrderBy(x => x.Campus!.Name),
+            "admissiontypename" => sortDesc ? query.OrderByDescending(x => x.AdmissionType!.AdmissionTypeName) : query.OrderBy(x => x.AdmissionType!.AdmissionTypeName),
+            "quota" => sortDesc ? query.OrderByDescending(x => x.Quota) : query.OrderBy(x => x.Quota),
+            "isactive" => sortDesc ? query.OrderByDescending(x => x.IsActive) : query.OrderBy(x => x.IsActive),
+            "createdat" => sortDesc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
+            _ => sortDesc ? query.OrderByDescending(x => x.ConfigId) : query.OrderBy(x => x.ConfigId)
+        };
+
+        var skip = (pageNumber - 1) * pageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items.Select(MapToDomain).ToList(), totalCount);
+    }
+
     private static DomainConfig MapToDomain(InfraConfig infra)
     {
         return new DomainConfig

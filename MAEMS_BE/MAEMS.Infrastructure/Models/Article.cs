@@ -13,6 +13,8 @@ public partial class Article
 
     public string Content { get; set; }
 
+    public string Thumbnail { get; set; }
+
     public int? AuthorId { get; set; }
 
     public string Status { get; set; }

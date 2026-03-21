@@ -22,13 +22,23 @@ public class MajorsController : ControllerBase
     }
 
     /// <summary>
-    /// Get all majors
+    /// Get all majors, with SQL-level sort & paging
     /// </summary>
-    /// <returns>List of all majors</returns>
+    /// <param name="search">Optional search term (matches majorCode/majorName)</param>
+    /// <param name="sortBy">Sort field (allowed: majorId [default], majorCode, majorName, createdAt, isActive)</param>
+    /// <param name="sortDesc">Sort descending (default false)</param>
+    /// <param name="pageNumber">Page number (default 1)</param>
+    /// <param name="pageSize">Page size (default 20, max 100)</param>
+    /// <returns>Paged list of all majors</returns>
     [HttpGet]
-    public async Task<IActionResult> GetAllMajors()
+    public async Task<IActionResult> GetAllMajors(
+        [FromQuery] string? search,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortDesc = false,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var query = new GetAllMajorsQuery();
+        var query = new GetAllMajorsQuery(search, sortBy, sortDesc, pageNumber, pageSize);
         var result = await _mediator.Send(query);
 
         if (!result.Success)

@@ -158,12 +158,23 @@ public class UsersController : ControllerBase
     /// Get all users (requires JWT authentication with role = admin)
     /// </summary>
     /// <param name="roleId">Optional role id filter</param>
-    /// <returns>List of users</returns>
+    /// <param name="search">Optional search term (matches username/email)</param>
+    /// <param name="sortBy">Sort field (allowed: userId [default], username, email, createdAt)</param>
+    /// <param name="sortDesc">Sort descending (default false)</param>
+    /// <param name="pageNumber">Page number (default 1)</param>
+    /// <param name="pageSize">Page size (default 20, max 100)</param>
+    /// <returns>Paged list of users</returns>
     [HttpGet]
     [Authorize(Roles = "admin")]
-    public async Task<IActionResult> GetAllUsers([FromQuery] int? roleId)
+    public async Task<IActionResult> GetAllUsers(
+        [FromQuery] int? roleId,
+        [FromQuery] string? search,
+        [FromQuery] string? sortBy,
+        [FromQuery] bool sortDesc = false,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var result = await _mediator.Send(new GetAllUsersQuery(roleId));
+        var result = await _mediator.Send(new GetAllUsersQuery(roleId, search, sortBy, sortDesc, pageNumber, pageSize));
 
         if (!result.Success)
         {
