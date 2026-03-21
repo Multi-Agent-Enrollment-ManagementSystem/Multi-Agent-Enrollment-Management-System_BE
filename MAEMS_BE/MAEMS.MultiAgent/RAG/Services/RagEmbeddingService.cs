@@ -16,17 +16,20 @@ public class RagEmbeddingService : IRagEmbeddingService
     private readonly IConfiguration _configuration;
     private readonly ILogger<RagEmbeddingService> _logger;
     private readonly RagSettings _ragSettings;
+    private readonly IEmbeddingCacheService _cacheService;
     private readonly string _apiKey;
     private readonly string _apiUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 
     public RagEmbeddingService(
         HttpClient httpClient,
         IConfiguration configuration,
-        ILogger<RagEmbeddingService> logger)
+        ILogger<RagEmbeddingService> logger,
+        IEmbeddingCacheService cacheService)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _logger = logger;
+        _cacheService = cacheService;
 
         _ragSettings = new RagSettings();
         _configuration.GetSection(RagSettings.SectionName).Bind(_ragSettings);
@@ -44,6 +47,13 @@ public class RagEmbeddingService : IRagEmbeddingService
             throw new ArgumentException("Text cannot be empty", nameof(text));
         }
 
+        // Check cache first
+        if (_cacheService.TryGetCachedEmbedding(text, out var cachedEmbedding))
+        {
+            _logger.LogInformation($"Using cached embedding for text");
+            return cachedEmbedding!;
+        }
+
         var embeddings = await EmbedTextsAsync(new[] { text }, cancellationToken);
         return embeddings[0];
     }
@@ -57,7 +67,7 @@ public class RagEmbeddingService : IRagEmbeddingService
             throw new ArgumentException("At least one non-empty text is required", nameof(texts));
         }
 
-        _logger.LogInformation($"Embedding {textList.Count} texts using Gemini API");
+        _logger.LogInformation($"Embedding {textList.Count} texts using Gemini API (batch size: {_ragSettings.Embedding.BatchSize})");
 
         var embeddings = new List<float[]>();
 
@@ -65,15 +75,27 @@ public class RagEmbeddingService : IRagEmbeddingService
         {
             // Process texts in batches (Gemini limit is 100)
             var batchSize = _ragSettings.Embedding.BatchSize;
+            var delayBetweenRequestsMs = _ragSettings.Embedding.DelayBetweenRequestsMs;
+            var delayBetweenBatchesMs = _ragSettings.Embedding.DelayBetweenBatchesMs;
 
-            for (int i = 0; i < textList.Count; i += batchSize)
+            for (int batchIndex = 0; batchIndex < textList.Count; batchIndex += batchSize)
             {
-                var batch = textList.Skip(i).Take(batchSize).ToList();
-                var batchEmbeddings = await EmbedBatchAsync(batch, cancellationToken);
+                var batch = textList.Skip(batchIndex).Take(batchSize).ToList();
+                var batchNum = batchIndex / batchSize + 1;
+                _logger.LogInformation($"Processing batch {batchNum} with {batch.Count} texts");
+
+                var batchEmbeddings = await EmbedBatchAsync(batch, cancellationToken, delayBetweenRequestsMs);
                 embeddings.AddRange(batchEmbeddings);
+
+                // Add delay between batches to avoid rate limiting
+                if (batchIndex + batchSize < textList.Count)
+                {
+                    _logger.LogInformation($"Completed batch {batchNum}. Waiting {delayBetweenBatchesMs}ms before next batch...");
+                    await Task.Delay(delayBetweenBatchesMs, cancellationToken);
+                }
             }
 
-            _logger.LogInformation($"Successfully embedded {embeddings.Count} texts");
+            _logger.LogInformation($"Successfully embedded all {embeddings.Count} texts");
             return embeddings.ToArray();
         }
         catch (HttpRequestException ex)
@@ -95,7 +117,7 @@ public class RagEmbeddingService : IRagEmbeddingService
 
     public string GetModelName() => _ragSettings.Embedding.ModelName;
 
-    private async Task<List<float[]>> EmbedBatchAsync(IEnumerable<string> texts, CancellationToken cancellationToken)
+    private async Task<List<float[]>> EmbedBatchAsync(IEnumerable<string> texts, CancellationToken cancellationToken, int delayBetweenRequestsMs = 0)
     {
         var embeddings = new List<float[]>();
         var textList = texts.ToList();
@@ -104,59 +126,21 @@ public class RagEmbeddingService : IRagEmbeddingService
         var modelName = "gemini-embedding-001";
 
         // Process each text individually
-        foreach (var text in textList)
+        for (int i = 0; i < textList.Count; i++)
         {
+            var text = textList[i];
             try
             {
-                var url = $"{_apiUrl}/{modelName}:embedContent?key={_apiKey}";
-
-                var requestPayload = new
+                var embedding = await EmbedSingleTextWithRetryAsync(text, modelName, cancellationToken);
+                if (embedding != null)
                 {
-                    model = $"models/{modelName}",
-                    content = new
-                    {
-                        parts = new[] { new { text = text } }
-                    }
-                };
-
-                var jsonContent = JsonSerializer.Serialize(requestPayload);
-                var httpContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-                _logger.LogDebug($"Embedding text with {modelName}: {text.Substring(0, Math.Min(50, text.Length))}...");
-
-                var response = await _httpClient.PostAsync(url, httpContent, cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                    _logger.LogError($"Embedding API returned {response.StatusCode}: {errorContent}");
-                    throw new InvalidOperationException($"Embedding API error: {response.StatusCode}");
+                    embeddings.Add(embedding);
                 }
 
-                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseJson = JsonDocument.Parse(responseContent);
-                var root = responseJson.RootElement;
-
-                // Parse the response: { "embedding": { "values": [...] } }
-                if (root.TryGetProperty("embedding", out var embeddingObj))
+                // Add delay between individual requests within the batch
+                if (i < textList.Count - 1 && delayBetweenRequestsMs > 0)
                 {
-                    if (embeddingObj.TryGetProperty("values", out var valuesArray))
-                    {
-                        var values = new List<float>();
-                        foreach (var value in valuesArray.EnumerateArray())
-                        {
-                            if (value.TryGetSingle(out var floatValue))
-                            {
-                                values.Add(floatValue);
-                            }
-                        }
-
-                        if (values.Count > 0)
-                        {
-                            embeddings.Add(values.ToArray());
-                            _logger.LogDebug($"Generated embedding with {values.Count} dimensions");
-                        }
-                    }
+                    await Task.Delay(delayBetweenRequestsMs, cancellationToken);
                 }
             }
             catch (Exception ex)
@@ -167,5 +151,102 @@ public class RagEmbeddingService : IRagEmbeddingService
         }
 
         return embeddings;
+    }
+
+    private async Task<float[]?> EmbedSingleTextWithRetryAsync(string text, string modelName, CancellationToken cancellationToken, int retryCount = 0)
+    {
+        // Aggressive retry for rate limiting - wait longer
+        const int maxRetries = 5;
+        const int initialDelayMs = 2000; // Start with 2 seconds instead of 1
+
+        try
+        {
+            var url = $"{_apiUrl}/{modelName}:embedContent?key={_apiKey}";
+
+            var requestPayload = new
+            {
+                model = $"models/{modelName}",
+                content = new
+                {
+                    parts = new[] { new { text = text } }
+                }
+            };
+
+            var jsonContent = JsonSerializer.Serialize(requestPayload);
+            var httpContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+            _logger.LogDebug($"Embedding text with {modelName}: {text.Substring(0, Math.Min(50, text.Length))}...");
+
+            var response = await _httpClient.PostAsync(url, httpContent, cancellationToken);
+
+            // Handle rate limiting (429)
+            if ((int)response.StatusCode == 429)
+            {
+                if (retryCount < maxRetries)
+                {
+                    // Exponential backoff: 2s, 4s, 8s, 16s, 32s
+                    var delayMs = initialDelayMs * (int)Math.Pow(2, retryCount);
+                    _logger.LogWarning($"Rate limited (429). Waiting {delayMs}ms before retry (attempt {retryCount + 1}/{maxRetries})");
+                    await Task.Delay(delayMs, cancellationToken);
+                    return await EmbedSingleTextWithRetryAsync(text, modelName, cancellationToken, retryCount + 1);
+                }
+                else
+                {
+                    // After exhausting retries, throw exception instead of returning fallback
+                    _logger.LogError($"Max retries ({maxRetries}) exceeded for rate limiting. Failing request.");
+                    throw new InvalidOperationException($"Rate limit exceeded after {maxRetries} retries. Gemini API quota exhausted.");
+                }
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError($"Embedding API returned {response.StatusCode}: {errorContent}");
+                throw new InvalidOperationException($"Embedding API error: {response.StatusCode}");
+            }
+
+            var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var responseJson = JsonDocument.Parse(responseContent);
+            var root = responseJson.RootElement;
+
+            // Parse the response: { "embedding": { "values": [...] } }
+            if (root.TryGetProperty("embedding", out var embeddingObj))
+            {
+                if (embeddingObj.TryGetProperty("values", out var valuesArray))
+                {
+                    var values = new List<float>();
+                    foreach (var value in valuesArray.EnumerateArray())
+                    {
+                        if (value.TryGetSingle(out var floatValue))
+                        {
+                            values.Add(floatValue);
+                        }
+                    }
+
+                    if (values.Count > 0)
+                    {
+                        var embedding = values.ToArray();
+                        _logger.LogDebug($"Generated embedding with {embedding.Length} dimensions");
+
+                        // Cache the result for future use
+                        _cacheService.CacheEmbedding(text, embedding);
+
+                        return embedding;
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Embedding request was cancelled");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error in embedding request");
+            throw;
+        }
     }
 }

@@ -39,12 +39,33 @@ public class RagVectorStore : IRagVectorStore
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
+    private async Task<bool> VerifyConnectionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await _httpClient.GetAsync("/", cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning($"Qdrant connection verification failed: {ex.Message}. URL: {_qdrantSettings.Url}");
+            return false;
+        }
+    }
+
     public async Task IndexDocumentsAsync(IEnumerable<RagDocumentWithEmbedding> documents, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation($"Indexing documents into Qdrant collection '{_collectionName}'");
 
         try
         {
+            // Verify connection to Qdrant
+            if (!await VerifyConnectionAsync(cancellationToken))
+            {
+                _logger.LogError($"Unable to connect to Qdrant at {_qdrantSettings.Url}. Make sure Qdrant is running.");
+                throw new InvalidOperationException($"Failed to connect to Qdrant at {_qdrantSettings.Url}");
+            }
+
             // Ensure collection exists
             await EnsureCollectionExistsAsync(cancellationToken);
 
@@ -283,12 +304,21 @@ public class RagVectorStore : IRagVectorStore
 
             _logger.LogInformation($"Creating collection '{_collectionName}' with vector dimension {_qdrantSettings.VectorDimension}");
 
+            // Convert distance metric to Qdrant format (PascalCase: Cosine, Euclidean, Dot)
+            var distanceMetric = _qdrantSettings.VectorMetric switch
+            {
+                "cosine" => "Cosine",
+                "euclidean" => "Euclidean",
+                "dot" => "Dot",
+                _ => "Cosine" // Default to Cosine
+            };
+
             var createRequest = new
             {
                 vectors = new
                 {
                     size = _qdrantSettings.VectorDimension,
-                    distance = _qdrantSettings.VectorMetric
+                    distance = distanceMetric
                 }
             };
 
