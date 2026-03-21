@@ -42,6 +42,10 @@ public static class DependencyInjection
 
         // RAG Services - Use factory to create scoped instances from singleton BackgroundService
         services.AddScoped<IRagDocumentLoader, RagDocumentLoader>();
+
+        // Embedding cache service - singleton to persist across requests
+        services.AddSingleton<IEmbeddingCacheService, EmbeddingCacheService>();
+
         services.AddHttpClient<IRagEmbeddingService, RagEmbeddingService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);

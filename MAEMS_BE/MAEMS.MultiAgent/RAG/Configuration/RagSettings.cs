@@ -91,7 +91,20 @@ public class EmbeddingSettings
     public string TaskType { get; set; } = "SEMANTIC_SEARCH";
 
     /// <summary>
-    /// Maximum texts to embed in batch
+    /// Maximum texts to embed in batch (default: 5, reduced from 50 to avoid rate limiting)
     /// </summary>
-    public int BatchSize { get; set; } = 50;
+    public int BatchSize { get; set; } = 5;
+
+    /// <summary>
+    /// Delay in milliseconds between individual embedding requests within a batch (default: 500ms)
+    /// Helps avoid rate limiting from Gemini API
+    /// </summary>
+    public int DelayBetweenRequestsMs { get; set; } = 500;
+
+    /// <summary>
+    /// Delay in milliseconds between batches (default: 1000ms = 1 second)
+    /// Helps avoid rate limiting from Gemini API when indexing large datasets
+    /// </summary>
+    public int DelayBetweenBatchesMs { get; set; } = 1000;
 }
+
