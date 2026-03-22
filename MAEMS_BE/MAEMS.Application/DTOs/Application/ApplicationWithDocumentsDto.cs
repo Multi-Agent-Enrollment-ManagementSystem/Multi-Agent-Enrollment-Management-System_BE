@@ -8,7 +8,7 @@ public class ApplicationWithDocumentsDto
     public int? ConfigId { get; set; }
 
     public int? AdmissionTypeId { get; set; }
-
+    public int? ApplicantId { get; set; }
     public string? ApplicantName { get; set; }
     public string? ProgramName { get; set; }
     public string? CampusName { get; set; }
