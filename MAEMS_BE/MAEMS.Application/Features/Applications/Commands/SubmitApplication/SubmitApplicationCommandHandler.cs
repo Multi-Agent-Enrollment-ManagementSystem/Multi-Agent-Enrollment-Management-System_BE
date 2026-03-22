@@ -56,12 +56,20 @@ public class SubmitApplicationCommandHandler : IRequestHandler<SubmitApplication
                 );
             }
 
-            // Only allow submission if status is 'draft'
-            if (!string.Equals(application.Status, "draft", StringComparison.OrdinalIgnoreCase))
+            // Only allow submission if status is 'draft' or 'document_required'
+            var currentStatus = application.Status ?? string.Empty;
+            var canSubmit =
+                string.Equals(currentStatus, "draft", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(currentStatus, "document_required", StringComparison.OrdinalIgnoreCase);
+
+            if (!canSubmit)
             {
                 return BaseResponse<ApplicationDto>.FailureResponse(
                     "Invalid operation",
-                    new List<string> { $"Application cannot be submitted because its current status is '{application.Status}'. Only draft applications can be submitted." }
+                    new List<string>
+                    {
+                        $"Application cannot be submitted because its current status is '{application.Status}'. Only draft or document_required applications can be submitted."
+                    }
                 );
             }
 
