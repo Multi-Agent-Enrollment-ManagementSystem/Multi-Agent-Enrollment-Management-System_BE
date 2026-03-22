@@ -73,7 +73,7 @@ public sealed class RequestAdditionalDocsCommandHandler : IRequestHandler<Reques
             }
 
             // Update application status
-            application.Status = "awaiting_documents";
+            application.Status = "document_required";
             application.LastUpdated = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             await _unitOfWork.Applications.UpdateAsync(application);

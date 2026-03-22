@@ -337,7 +337,7 @@ public class ApplicationsController : ControllerBase
 
     /// <summary>
     /// Request additional documents (officer only).
-    /// Changes application status from under_review to awaiting_documents and notifies the applicant.
+    /// Changes application status from under_review to document_required and notifies the applicant.
     /// </summary>
     [HttpPost("{id}/additional-docs")]
     [Authorize(Roles = "officer")]
