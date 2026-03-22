@@ -3,6 +3,7 @@ using MAEMS.Application.DTOs.Document;
 using MAEMS.Application.Features.Applications.Commands.CreateApplication;
 using MAEMS.Application.Features.Applications.Commands.PatchApplication;
 using MAEMS.Application.Features.Applications.Commands.SubmitApplication;
+using MAEMS.Application.Features.Applications.Commands.RequestAdditionalDocs;
 using  MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
 using MAEMS.Application.Features.Applications.Queries.GetApplicationWithDocuments;
 using MAEMS.Application.Features.Applications.Queries.GetMyApplication;
@@ -315,6 +316,43 @@ public class ApplicationsController : ControllerBase
                 RequiresReview = request.RequiresReview,
                 OfficerUserId = officerUserId
             };
+
+            var result = await _mediator.Send(command);
+
+            if (!result.Success)
+            {
+                if (result.Message == "Application not found")
+                    return NotFound(result);
+
+                return BadRequest(result);
+            }
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Internal server error", errors = new[] { ex.Message } });
+        }
+    }
+
+    /// <summary>
+    /// Request additional documents (officer only).
+    /// Changes application status from under_review to awaiting_documents and notifies the applicant.
+    /// </summary>
+    [HttpPost("{id}/additional-docs")]
+    [Authorize(Roles = "officer")]
+    public async Task<IActionResult> RequestAdditionalDocs(int id, [FromBody] RequestAdditionalDocsCommand command)
+    {
+        try
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out int officerUserId))
+            {
+                return Unauthorized(new { success = false, message = "Invalid token", errors = new[] { "User ID not found in token" } });
+            }
+
+            command.ApplicationId = id;
+            command.OfficerUserId = officerUserId;
 
             var result = await _mediator.Send(command);
 

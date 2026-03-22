@@ -28,6 +28,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationRepository, ApplicationRepository>();
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<ILlmChatLogRepository, LlmChatLogRepository>();
+        services.AddScoped<INotificationRepository, NotificationRepository>();
 
         // Register Unit of Work
         services.AddScoped<IUnitOfWork, UnitOfWork>();

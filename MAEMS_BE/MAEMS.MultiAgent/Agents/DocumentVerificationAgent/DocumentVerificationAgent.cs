@@ -123,51 +123,53 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             // ── Load all documents by ApplicantId (NOT ApplicationId) ─────
             var documents = (await unitOfWork.Documents.GetByApplicantIdAsync(application.ApplicantId.Value)).ToList();
 
+            // Collect rejected details (if any)
+            var rejectedNotes = new List<string>();
+
             if (documents.Count == 0)
             {
                 _logger.LogInformation(
-                    "DocumentVerificationAgent: No documents found for ApplicantId={ApplicantId} (ApplicationId={ApplicationId}).",
+                    "DocumentVerificationAgent: No documents found for ApplicantId={ApplicantId} (ApplicationId={ApplicationId}). Continuing with eligibility evaluation.",
                     application.ApplicantId.Value,
                     applicationId);
-                return;
             }
-
-            // Only verify documents that are still pending
-            var pendingDocuments = documents
-                .Where(d => string.Equals(d.VerificationResult, "pending", StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (pendingDocuments.Count == 0)
+            else
             {
-                _logger.LogInformation(
-                    "DocumentVerificationAgent: No pending documents to verify for ApplicantId={ApplicantId} (ApplicationId={ApplicationId}).",
-                    application.ApplicantId.Value,
-                    applicationId);
-                return;
-            }
+                // Only verify documents that are still pending
+                var pendingDocuments = documents
+                    .Where(d => string.Equals(d.VerificationResult, "pending", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
 
-            _logger.LogInformation(
-                "DocumentVerificationAgent: Verifying {Count} pending document(s) for ApplicantId={ApplicantId} (ApplicationId={ApplicationId})",
-                pendingDocuments.Count,
-                application.ApplicantId.Value,
-                applicationId);
-
-            // ── Verify each document, collect rejected details ────────────
-            var rejectedNotes = new List<string>();
-
-            foreach (var document in pendingDocuments)
-            {
-                await VerifySingleDocumentAsync(document, applicantJson, unitOfWork, applicationId);
-
-                if (string.Equals(document.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(document.VerificationDetails))
+                if (pendingDocuments.Count == 0)
                 {
-                    rejectedNotes.Add($"[{document.DocumentType ?? document.FileName}] {document.VerificationDetails}");
+                    _logger.LogInformation(
+                        "DocumentVerificationAgent: No pending documents to verify for ApplicantId={ApplicantId} (ApplicationId={ApplicationId}).",
+                        application.ApplicantId.Value,
+                        applicationId);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "DocumentVerificationAgent: Verifying {Count} pending document(s) for ApplicantId={ApplicantId} (ApplicationId={ApplicationId})",
+                        pendingDocuments.Count,
+                        application.ApplicantId.Value,
+                        applicationId);
+
+                    foreach (var document in pendingDocuments)
+                    {
+                        await VerifySingleDocumentAsync(document, applicantJson, unitOfWork, applicationId);
+
+                        if (string.Equals(document.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase)
+                            && !string.IsNullOrWhiteSpace(document.VerificationDetails))
+                        {
+                            rejectedNotes.Add($"[{document.DocumentType ?? document.FileName}] {document.VerificationDetails}");
+                        }
+                    }
                 }
             }
 
             // ── Set application status → "under_review" ───────────────────
-            application.Status      = "under_review";
+            application.Status = "under_review";
             application.LastUpdated = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             await unitOfWork.Applications.UpdateAsync(application);

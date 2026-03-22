@@ -18,6 +18,8 @@ public interface IUnitOfWork : IDisposable
 
     IArticleRepository Articles { get; }
 
+    INotificationRepository Notifications { get; }
+
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
     Task CommitTransactionAsync();
