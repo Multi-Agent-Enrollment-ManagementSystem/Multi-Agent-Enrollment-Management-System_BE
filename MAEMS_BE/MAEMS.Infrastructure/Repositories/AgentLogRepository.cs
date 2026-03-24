@@ -3,6 +3,7 @@ using DomainAgentLog = MAEMS.Domain.Entities.AgentLog;
 using InfraAgentLog = MAEMS.Infrastructure.Models.AgentLog;
 using MAEMS.Domain.Interfaces;
 using MAEMS.Infrastructure.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace MAEMS.Infrastructure.Repositories;
 
@@ -76,6 +77,71 @@ public sealed class AgentLogRepository : IAgentLogRepository
     {
         var all = await GetAllAsync();
         return all.Any(predicate.Compile());
+    }
+
+    public async Task<(IReadOnlyList<DomainAgentLog> Items, int TotalCount)> GetAgentLogsPagedAsync(
+        int? applicationId = null,
+        int? documentId = null,
+        string? agentType = null,
+        string? status = null,
+        string? search = null,
+        string? sortBy = null,
+        bool sortDesc = false,
+        int pageNumber = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _context.AgentLogs
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (applicationId.HasValue)
+            query = query.Where(a => a.ApplicationId == applicationId.Value);
+
+        if (documentId.HasValue)
+            query = query.Where(a => a.DocumentId == documentId.Value);
+
+        if (!string.IsNullOrWhiteSpace(agentType))
+            query = query.Where(a => EF.Functions.ILike(a.AgentType, $"%{agentType}%"));
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(a => EF.Functions.ILike(a.Status, $"%{status}%"));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(a =>
+                EF.Functions.ILike(a.AgentType, $"%{search}%") ||
+                EF.Functions.ILike(a.Action, $"%{search}%") ||
+                EF.Functions.ILike(a.Status, $"%{search}%") ||
+                EF.Functions.ILike(a.OutputData, $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "logId" : sortBy.Trim();
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "logid" => sortDesc ? query.OrderByDescending(x => x.LogId) : query.OrderBy(x => x.LogId),
+            "applicationid" => sortDesc ? query.OrderByDescending(x => x.ApplicationId) : query.OrderBy(x => x.ApplicationId),
+            "documentid" => sortDesc ? query.OrderByDescending(x => x.DocumentId) : query.OrderBy(x => x.DocumentId),
+            "agenttype" => sortDesc ? query.OrderByDescending(x => x.AgentType) : query.OrderBy(x => x.AgentType),
+            "action" => sortDesc ? query.OrderByDescending(x => x.Action) : query.OrderBy(x => x.Action),
+            "status" => sortDesc ? query.OrderByDescending(x => x.Status) : query.OrderBy(x => x.Status),
+            "createdat" => sortDesc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
+            _ => sortDesc ? query.OrderByDescending(x => x.LogId) : query.OrderBy(x => x.LogId)
+        };
+
+        var skip = (pageNumber - 1) * pageSize;
+        var items = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return (items.Select(MapToDomain).ToList(), totalCount);
     }
 
     private static DomainAgentLog MapToDomain(InfraAgentLog infra)
