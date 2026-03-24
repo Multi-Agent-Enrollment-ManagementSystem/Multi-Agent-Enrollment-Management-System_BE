@@ -33,10 +33,10 @@ public class ArticlesController : ControllerBase
     }
 
     /// <summary>
-    /// Upload article image (admin only). Stores in Firebase Storage and returns public URL.
+    /// Upload article image (admin/officer). Stores in Firebase Storage and returns public URL.
     /// </summary>
     [HttpPost("upload-image")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,officer")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> UploadArticleImage([FromForm] UploadArticleImageRequestDto request)
     {
@@ -69,10 +69,10 @@ public class ArticlesController : ControllerBase
     }
 
     /// <summary>
-    /// Create article (admin only). author_id will be taken from JWT (NameIdentifier).
+    /// Create article (admin/officer). author_id will be taken from JWT (NameIdentifier).
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,officer")]
     public async Task<IActionResult> CreateArticle([FromBody] CreateArticleCommand request)
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -120,10 +120,10 @@ public class ArticlesController : ControllerBase
     }
 
     /// <summary>
-    /// Admin: Get all articles (basic fields) with SQL-level paging/sort/filter.
+    /// Admin/Officer: Get all articles (basic fields) with SQL-level paging/sort/filter.
     /// </summary>
     [HttpGet("basic")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,officer")]
     public async Task<IActionResult> GetArticlesBasic(
         [FromQuery] string? searchTitle,
         [FromQuery] string? status,
@@ -151,7 +151,7 @@ public class ArticlesController : ControllerBase
     /// <summary>
     /// Get article by id.
     /// - AllowAnonymous only when article status = publish
-    /// - Otherwise requires admin
+    /// - Otherwise requires admin/officer
     /// </summary>
     [HttpGet("{id:int}")]
     [AllowAnonymous]
@@ -167,19 +167,21 @@ public class ArticlesController : ControllerBase
 
         if (!isPublished)
         {
-            // Require admin
-            if (!(User?.Identity?.IsAuthenticated ?? false) || !User.IsInRole("admin"))
-                return Unauthorized(new { success = false, message = "Admin authorization required", errors = new[] { "Not authorized" } });
+            var isStaff = (User?.Identity?.IsAuthenticated ?? false)
+                && (User.IsInRole("admin") || User.IsInRole("officer"));
+
+            if (!isStaff)
+                return Unauthorized(new { success = false, message = "Admin/Officer authorization required", errors = new[] { "Not authorized" } });
         }
 
         return Ok(result);
     }
 
     /// <summary>
-    /// Admin: Patch article fields (title, content, thumbnail, status).
+    /// Admin/Officer: Patch article fields (title, content, thumbnail, status).
     /// </summary>
     [HttpPatch("{id:int}")]
-    [Authorize(Roles = "admin")]
+    [Authorize(Roles = "admin,officer")]
     public async Task<IActionResult> PatchArticle([FromRoute] int id, [FromBody] PatchArticleCommand request)
     {
         request.ArticleId = id;
