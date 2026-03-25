@@ -35,7 +35,7 @@ public static class DependencyInjection
 
         // Register JWT Service
         services.AddScoped<IJwtService, JwtService>();
-        
+
         // Register Email Service
         services.AddScoped<IEmailService, EmailService>();
 
@@ -50,6 +50,9 @@ public static class DependencyInjection
 
         // Register Gemini Service
         services.AddHttpClient<IGeminiService, GeminiService>();
+
+        // Payment expiration (in-process fire-and-forget)
+        services.AddSingleton<IPaymentExpirationService, PaymentExpirationService>();
 
         return services;
     }
