@@ -30,6 +30,7 @@ public class UnitOfWork : IUnitOfWork
     public ILlmChatLogRepository LlmChatLogs => new LlmChatLogRepository(_context);
     public IArticleRepository Articles => new ArticleRepository(_context);
     public INotificationRepository Notifications => new NotificationRepository(_context);
+    public IPaymentRepository Payments => new PaymentRepository(_context);
 
     public async Task<int> SaveChangesAsync()
     {

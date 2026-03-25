@@ -1,11 +1,11 @@
-using MAEMS.Application.DTOs.Application;
+using MAEMS.Application.DTOs.Payment;
 using MAEMS.Domain.Common;
 using MediatR;
 using System.Text.Json.Serialization;
 
 namespace MAEMS.Application.Features.Applications.Commands.SubmitApplication;
 
-public class SubmitApplicationCommand : IRequest<BaseResponse<ApplicationDto>>
+public class SubmitApplicationCommand : IRequest<BaseResponse<SubmitApplicationPaymentDto>>
 {
     public int ApplicationId { get; set; }
 
