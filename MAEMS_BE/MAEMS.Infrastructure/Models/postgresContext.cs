@@ -424,6 +424,9 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.TransactionId)
                 .HasMaxLength(255)
                 .HasColumnName("transaction_id");
+            entity.Property(e => e.ReferenceCode)
+                .HasMaxLength(255)
+                .HasColumnName("reference_code");
 
             entity.HasOne(d => d.Applicant).WithMany(p => p.Payments)
                 .HasForeignKey(d => d.ApplicantId)

@@ -1,6 +1,7 @@
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Entities;
 using MAEMS.Domain.Interfaces;
+using MAEMS.Application.Interfaces;
 using MediatR;
 
 namespace MAEMS.Application.Features.Payments.Commands.SepayWebhook;
@@ -8,10 +9,12 @@ namespace MAEMS.Application.Features.Payments.Commands.SepayWebhook;
 public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCommand, BaseResponse<object?>>
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IEmailService _emailService;
 
-    public SepayWebhookCommandHandler(IUnitOfWork unitOfWork)
+    public SepayWebhookCommandHandler(IUnitOfWork unitOfWork, IEmailService emailService)
     {
         _unitOfWork = unitOfWork;
+        _emailService = emailService;
     }
 
     public async Task<BaseResponse<object?>> Handle(SepayWebhookCommand request, CancellationToken cancellationToken)
@@ -60,6 +63,7 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
             {
                 payment.PaymentStatus = "Paid";
                 payment.PaidAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+                payment.ReferenceCode = request.ReferenceCode;
 
                 await _unitOfWork.Payments.UpdateAsync(payment);
 
@@ -75,6 +79,18 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                     IsRead = false,
                     SentAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
                 });
+
+                // Send email confirmation
+                var user = await _unitOfWork.Users.GetByIdAsync(recipientUserId);
+                if (!string.IsNullOrWhiteSpace(user?.Email) && payment.Amount.HasValue)
+                {
+                    await _emailService.SendPaymentReceivedEmailAsync(
+                        user.Email,
+                        user.Username,
+                        payment.Amount.Value,
+                        request.ReferenceCode,
+                        transactionId);
+                }
 
                 await _unitOfWork.SaveChangesAsync();
 
@@ -96,6 +112,17 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                     IsRead = false,
                     SentAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
                 });
+                // Send email confirmation
+                var user = await _unitOfWork.Users.GetByIdAsync(recipientUserId);
+                if (!string.IsNullOrWhiteSpace(user?.Email) && payment.Amount.HasValue)
+                {
+                    await _emailService.SendPaymentReceivedEmailAsync(
+                        user.Email,
+                        user.Username,
+                        payment.Amount.Value,
+                        request.ReferenceCode,
+                        transactionId);
+                }
 
                 await _unitOfWork.SaveChangesAsync();
 
