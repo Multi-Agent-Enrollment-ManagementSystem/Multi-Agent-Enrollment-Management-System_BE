@@ -23,6 +23,8 @@ public partial class Payment
 
     public DateTime? PaidAt { get; set; }
 
+    public string? ReferenceCode { get; set; }
+
     public virtual Applicant Applicant { get; set; }
 
     public virtual Application Application { get; set; }

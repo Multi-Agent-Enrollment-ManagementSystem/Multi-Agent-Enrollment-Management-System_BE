@@ -98,6 +98,7 @@ public class SubmitApplicationCommandHandler : IRequestHandler<SubmitApplication
                     Amount = amount,
                     PaymentMethod = "Sepay",
                     TransactionId = transactionId,
+                    ReferenceCode = null,
                     PaymentStatus = "pending",
                     PaidAt = null
                 });

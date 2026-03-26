@@ -1,5 +1,6 @@
 using AutoMapper;
 using MAEMS.Application.DTOs.Application;
+using MAEMS.Application.Interfaces;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Entities;
 using MAEMS.Domain.Interfaces;
@@ -11,11 +12,13 @@ public sealed class RequestAdditionalDocsCommandHandler : IRequestHandler<Reques
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
+    private readonly IEmailService _emailService;
 
-    public RequestAdditionalDocsCommandHandler(IUnitOfWork unitOfWork, IMapper mapper)
+    public RequestAdditionalDocsCommandHandler(IUnitOfWork unitOfWork, IMapper mapper, IEmailService emailService)
     {
         _unitOfWork = unitOfWork;
         _mapper = mapper;
+        _emailService = emailService;
     }
 
     public async Task<BaseResponse<ApplicationDto>> Handle(RequestAdditionalDocsCommand request, CancellationToken cancellationToken)
@@ -92,6 +95,16 @@ public sealed class RequestAdditionalDocsCommandHandler : IRequestHandler<Reques
                 IsRead = false,
                 SentAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
             });
+
+            // Send email status updated (after creating notification)
+            var user = await _unitOfWork.Users.GetByIdAsync(applicant.UserId.Value);
+            if (!string.IsNullOrWhiteSpace(user?.Email))
+            {
+                await _emailService.SendApplicationStatusUpdatedEmailAsync(
+                    user.Email,
+                    applicant.FullName,
+                    application.ApplicationId);
+            }
 
             await _unitOfWork.SaveChangesAsync();
 

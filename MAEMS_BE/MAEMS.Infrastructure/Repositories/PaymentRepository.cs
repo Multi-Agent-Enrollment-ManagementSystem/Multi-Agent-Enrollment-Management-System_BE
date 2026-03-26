@@ -125,6 +125,7 @@ public class PaymentRepository : IPaymentRepository
             Amount = entity.Amount,
             PaymentMethod = entity.PaymentMethod ?? string.Empty,
             TransactionId = entity.TransactionId ?? string.Empty,
+            ReferenceCode = entity.ReferenceCode,
             PaymentStatus = entity.PaymentStatus ?? string.Empty,
             PaidAt = entity.PaidAt
         };
@@ -144,6 +145,7 @@ public class PaymentRepository : IPaymentRepository
             infra.Amount = entity.Amount;
             infra.PaymentMethod = entity.PaymentMethod;
             infra.TransactionId = entity.TransactionId;
+            infra.ReferenceCode = entity.ReferenceCode;
             infra.PaymentStatus = entity.PaymentStatus;
             infra.PaidAt = entity.PaidAt;
 
@@ -161,6 +163,7 @@ public class PaymentRepository : IPaymentRepository
         Amount = infra.Amount,
         PaymentMethod = infra.PaymentMethod,
         TransactionId = infra.TransactionId,
+        ReferenceCode = infra.ReferenceCode,
         PaymentStatus = infra.PaymentStatus,
         PaidAt = infra.PaidAt
     };

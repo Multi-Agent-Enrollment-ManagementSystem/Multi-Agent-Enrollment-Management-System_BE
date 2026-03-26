@@ -8,6 +8,8 @@ public class Payment
     public decimal? Amount { get; set; }
     public string? PaymentMethod { get; set; }
     public string? TransactionId { get; set; }
+    public string? ReferenceCode { get; set; }
+
     public string? PaymentStatus { get; set; }
     public DateTime? PaidAt { get; set; }
 }
