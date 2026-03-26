@@ -1,4 +1,5 @@
 using MAEMS.Application.Interfaces;
+using MAEMS.Domain.Interfaces;
 using MAEMS.Infrastructure.Models;
 using MAEMS.Infrastructure.Repositories;
 using MAEMS.Infrastructure.Services;
@@ -15,14 +16,14 @@ namespace MAEMS.MultiAgent.Agents;
 public sealed class ChatBoxAgent : IChatBoxAgent
 {
     private readonly IGeminiService _geminiService;
-    private readonly ILlmChatLogRepository _chatLogRepository;
+    private readonly ILlmChatLogRepositoryLegacy _chatLogRepository;
     private readonly postgresContext _dbContext;
     private readonly IRagRetrievalService _ragRetrievalService;
     private readonly ILogger<ChatBoxAgent> _logger;
 
     public ChatBoxAgent(
         IGeminiService geminiService,
-        ILlmChatLogRepository chatLogRepository,
+        ILlmChatLogRepositoryLegacy chatLogRepository,
         postgresContext dbContext,
         IRagRetrievalService ragRetrievalService,
         ILogger<ChatBoxAgent> logger)

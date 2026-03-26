@@ -64,6 +64,7 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                 payment.PaymentStatus = "Paid";
                 payment.PaidAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
                 payment.ReferenceCode = request.ReferenceCode;
+
                 await _unitOfWork.Payments.UpdateAsync(payment);
 
                 var message =

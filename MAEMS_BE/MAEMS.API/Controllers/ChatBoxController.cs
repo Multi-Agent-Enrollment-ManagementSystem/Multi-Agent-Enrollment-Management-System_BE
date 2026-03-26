@@ -22,7 +22,7 @@ namespace MAEMS.API.Controllers;
 public class ChatBoxController : ControllerBase
 {
     private readonly IChatBoxAgent _chatBoxAgent;
-    private readonly ILlmChatLogRepository _chatLogRepository;
+    private readonly ILlmChatLogRepositoryLegacy _chatLogRepository;
     private readonly IMediator _mediator;
     private readonly ILogger<ChatBoxController> _logger;
     private readonly IRagRetrievalService _ragRetrievalService;
@@ -31,7 +31,7 @@ public class ChatBoxController : ControllerBase
 
     public ChatBoxController(
         IChatBoxAgent chatBoxAgent,
-        ILlmChatLogRepository chatLogRepository,
+        ILlmChatLogRepositoryLegacy chatLogRepository,
         IMediator mediator,
         ILogger<ChatBoxController> logger,
         IRagRetrievalService ragRetrievalService,

@@ -15,6 +15,7 @@ public interface IUnitOfWork : IDisposable
     IEnrollmentYearRepository EnrollmentYears { get; }
 
     IAgentLogRepository AgentLogs { get; }
+    ILlmChatLogRepository LlmChatLogs { get; }
 
     IArticleRepository Articles { get; }
 
