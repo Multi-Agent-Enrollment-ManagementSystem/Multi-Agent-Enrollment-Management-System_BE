@@ -460,82 +460,82 @@ public class ChatBoxController : ControllerBase
     /// <summary>
     /// Test endpoint to index sample documents for RAG (Development only)
     /// </summary>
-    //[HttpPost("test-index-documents")]
-    //[AllowAnonymous]
-    //public async Task<IActionResult> TestIndexDocuments(CancellationToken cancellationToken)
-    //{
-    //    try
-    //    {
-    //        _logger.LogInformation("Starting test document indexing");
+    [HttpPost("test-index-documents")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TestIndexDocuments(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Starting test document indexing");
 
-    //        // Create sample documents for testing
-    //        var sampleDocuments = new List<RagDocument>
-    //        {
-    //            new RagDocument
-    //            {
-    //                Id = "doc-001",
-    //                Content = "Admission requirements: Applicants must have a bachelor's degree in a related field. " +
-    //                         "Minimum GPA of 3.0 is required. TOEFL score of at least 80 is needed for international students.",
-    //                Source = "AdmissionGuide.pdf",
-    //                Metadata = new Dictionary<string, string> { { "section", "requirements" } },
-    //                CreatedAt = DateTime.UtcNow
-    //            },
-    //            new RagDocument
-    //            {
-    //                Id = "doc-002",
-    //                Content = "Application deadline: The application deadline for Fall 2024 is March 31, 2024. " +
-    //                         "Late applications may be considered on a rolling basis if seats are available.",
-    //                Source = "ImportantDates.pdf",
-    //                Metadata = new Dictionary<string, string> { { "section", "deadline" } },
-    //                CreatedAt = DateTime.UtcNow
-    //            },
-    //            new RagDocument
-    //            {
-    //                Id = "doc-003",
-    //                Content = "Tuition and fees: Annual tuition is $45,000. Additional fees include $2,000 for health insurance, " +
-    //                         "$1,500 for technology fee, and $500 for student activity fee.",
-    //                Source = "FinancialInformation.pdf",
-    //                Metadata = new Dictionary<string, string> { { "section", "fees" } },
-    //                CreatedAt = DateTime.UtcNow
-    //            },
-    //            new RagDocument
-    //            {
-    //                Id = "doc-004",
-    //                Content = "Scholarship opportunities: Merit-based scholarships up to $20,000 are available. " +
-    //                         "Need-based aid is also offered to qualified applicants. FAFSA completion is required.",
-    //                Source = "Scholarships.pdf",
-    //                Metadata = new Dictionary<string, string> { { "section", "financial_aid" } },
-    //                CreatedAt = DateTime.UtcNow
-    //            },
-    //            new RagDocument
-    //            {
-    //                Id = "doc-005",
-    //                Content = "Program overview: This master's program focuses on advanced topics in the field. " +
-    //                         "Students will complete 36 credit hours of coursework including core classes, electives, and a capstone project.",
-    //                Source = "ProgramDescription.pdf",
-    //                Metadata = new Dictionary<string, string> { { "section", "program" } },
-    //                CreatedAt = DateTime.UtcNow
-    //            }
-    //        };
+            // Create sample documents for testing
+            var sampleDocuments = new List<RagDocument>
+            {
+                new RagDocument
+                {
+                    Id = "doc-001",
+                    Content = "Admission requirements: Applicants must have a bachelor's degree in a related field. " +
+                             "Minimum GPA of 3.0 is required. TOEFL score of at least 80 is needed for international students.",
+                    Source = "AdmissionGuide.pdf",
+                    Metadata = new Dictionary<string, string> { { "section", "requirements" } },
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RagDocument
+                {
+                    Id = "doc-002",
+                    Content = "Application deadline: The application deadline for Fall 2024 is March 31, 2024. " +
+                             "Late applications may be considered on a rolling basis if seats are available.",
+                    Source = "ImportantDates.pdf",
+                    Metadata = new Dictionary<string, string> { { "section", "deadline" } },
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RagDocument
+                {
+                    Id = "doc-003",
+                    Content = "Tuition and fees: Annual tuition is $45,000. Additional fees include $2,000 for health insurance, " +
+                             "$1,500 for technology fee, and $500 for student activity fee.",
+                    Source = "FinancialInformation.pdf",
+                    Metadata = new Dictionary<string, string> { { "section", "fees" } },
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RagDocument
+                {
+                    Id = "doc-004",
+                    Content = "Scholarship opportunities: Merit-based scholarships up to $20,000 are available. " +
+                             "Need-based aid is also offered to qualified applicants. FAFSA completion is required.",
+                    Source = "Scholarships.pdf",
+                    Metadata = new Dictionary<string, string> { { "section", "financial_aid" } },
+                    CreatedAt = DateTime.UtcNow
+                },
+                new RagDocument
+                {
+                    Id = "doc-005",
+                    Content = "Program overview: This master's program focuses on advanced topics in the field. " +
+                             "Students will complete 36 credit hours of coursework including core classes, electives, and a capstone project.",
+                    Source = "ProgramDescription.pdf",
+                    Metadata = new Dictionary<string, string> { { "section", "program" } },
+                    CreatedAt = DateTime.UtcNow
+                }
+            };
 
-    //        // Index the documents
-    //        await _ragRetrievalService.IndexDocumentsAsync(sampleDocuments, cancellationToken);
+            // Index the documents
+            await _ragRetrievalService.IndexDocumentsAsync(sampleDocuments, cancellationToken);
 
-    //        _logger.LogInformation("Test document indexing completed successfully");
-    //        return Ok(new 
-    //        { 
-    //            message = "Test documents indexed successfully",
-    //            count = sampleDocuments.Count,
-    //            documents = sampleDocuments.Select(d => new { d.Id, d.Source })
-    //        });
-    //    }
-    //    catch (Exception ex)
-    //    {
-    //        _logger.LogError(ex, "Error during test indexing");
-    //        return StatusCode(StatusCodes.Status500InternalServerError,
-    //            new { error = "Test indexing failed", message = ex.Message });
-    //    }
-    //}
+            _logger.LogInformation("Test document indexing completed successfully");
+            return Ok(new
+            {
+                message = "Test documents indexed successfully",
+                count = sampleDocuments.Count,
+                documents = sampleDocuments.Select(d => new { d.Id, d.Source })
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during test indexing");
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { error = "Test indexing failed", message = ex.Message });
+        }
+    }
 
     /// <summary>
     /// Debug: Check what data exists in database before indexing
