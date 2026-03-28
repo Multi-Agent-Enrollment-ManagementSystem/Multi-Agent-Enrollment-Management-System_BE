@@ -267,6 +267,12 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.Address)
                 .HasMaxLength(255)
                 .HasColumnName("address");
+            entity.Property(e => e.Email)
+                .HasMaxLength(150)
+                .HasColumnName("email");
+            entity.Property(e => e.PhoneNumber)
+                .HasMaxLength(50)
+                .HasColumnName("phone_number");
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
