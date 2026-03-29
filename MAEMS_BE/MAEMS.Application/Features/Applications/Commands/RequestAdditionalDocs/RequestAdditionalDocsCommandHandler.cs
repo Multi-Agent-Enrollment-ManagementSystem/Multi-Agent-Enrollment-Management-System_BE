@@ -1,5 +1,6 @@
 using AutoMapper;
 using MAEMS.Application.DTOs.Application;
+using MAEMS.Application.DTOs.Notification;
 using MAEMS.Application.Interfaces;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Entities;
@@ -13,12 +14,18 @@ public sealed class RequestAdditionalDocsCommandHandler : IRequestHandler<Reques
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
     private readonly IEmailService _emailService;
+    private readonly INotificationHubService _notificationHubService;
 
-    public RequestAdditionalDocsCommandHandler(IUnitOfWork unitOfWork, IMapper mapper, IEmailService emailService)
+    public RequestAdditionalDocsCommandHandler(
+        IUnitOfWork unitOfWork, 
+        IMapper mapper, 
+        IEmailService emailService,
+        INotificationHubService notificationHubService)
     {
         _unitOfWork = unitOfWork;
         _mapper = mapper;
         _emailService = emailService;
+        _notificationHubService = notificationHubService;
     }
 
     public async Task<BaseResponse<ApplicationDto>> Handle(RequestAdditionalDocsCommand request, CancellationToken cancellationToken)
@@ -87,14 +94,16 @@ public sealed class RequestAdditionalDocsCommandHandler : IRequestHandler<Reques
                 $"Hồ sơ {application.ApplicationId} của bạn, được yêu cầu bổ sung các loại giấy tờ sau: {request.DocsNeed}. " +
                 "Vui lòng bổ sung và tái nộp lại lần nữa";
 
-            await _unitOfWork.Notifications.AddAsync(new Notification
+            var notification = new Notification
             {
                 RecipientUserId = applicant.UserId.Value,
                 NotificationType = "Bổ sung giấy tờ",
                 Message = message,
                 IsRead = false,
                 SentAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
-            });
+            };
+
+            await _unitOfWork.Notifications.AddAsync(notification);
 
             // Send email status updated (after creating notification)
             var user = await _unitOfWork.Users.GetByIdAsync(applicant.UserId.Value);
@@ -107,6 +116,10 @@ public sealed class RequestAdditionalDocsCommandHandler : IRequestHandler<Reques
             }
 
             await _unitOfWork.SaveChangesAsync();
+
+            // Send real-time notification via SignalR
+            var notificationDto = _mapper.Map<NotificationDto>(notification);
+            await _notificationHubService.SendToUserAsync(applicant.UserId.Value, notificationDto);
 
             var dto = _mapper.Map<ApplicationDto>(application);
             return BaseResponse<ApplicationDto>.SuccessResponse(dto, "Additional documents requested successfully");

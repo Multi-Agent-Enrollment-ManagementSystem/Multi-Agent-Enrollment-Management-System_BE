@@ -2,6 +2,8 @@ using MAEMS.Domain.Common;
 using MAEMS.Domain.Entities;
 using MAEMS.Domain.Interfaces;
 using MAEMS.Application.Interfaces;
+using MAEMS.Application.DTOs.Notification;
+using AutoMapper;
 using MediatR;
 
 namespace MAEMS.Application.Features.Payments.Commands.SepayWebhook;
@@ -10,11 +12,19 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEmailService _emailService;
+    private readonly INotificationHubService _notificationHubService;
+    private readonly IMapper _mapper;
 
-    public SepayWebhookCommandHandler(IUnitOfWork unitOfWork, IEmailService emailService)
+    public SepayWebhookCommandHandler(
+        IUnitOfWork unitOfWork, 
+        IEmailService emailService,
+        INotificationHubService notificationHubService,
+        IMapper mapper)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
+        _notificationHubService = notificationHubService;
+        _mapper = mapper;
     }
 
     public async Task<BaseResponse<object?>> Handle(SepayWebhookCommand request, CancellationToken cancellationToken)
@@ -71,14 +81,16 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                     $"Hệ thống đã ghi nhận khoản thanh toán lệ phí xét tuyển cho hồ sơ {payment.PaymentId} của bạn. " +
                     "Bây giờ bạn có thể submit hồ sơ.";
 
-                await _unitOfWork.Notifications.AddAsync(new Notification
+                var notification = new Notification
                 {
                     RecipientUserId = recipientUserId,
                     NotificationType = "Thanh toán",
                     Message = message,
                     IsRead = false,
                     SentAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
-                });
+                };
+
+                await _unitOfWork.Notifications.AddAsync(notification);
 
                 // Send email confirmation
                 var user = await _unitOfWork.Users.GetByIdAsync(recipientUserId);
@@ -93,6 +105,10 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                 }
 
                 await _unitOfWork.SaveChangesAsync();
+
+                // Send real-time notification via SignalR
+                var notificationDto = _mapper.Map<NotificationDto>(notification);
+                await _notificationHubService.SendToUserAsync(recipientUserId, notificationDto);
 
                 return BaseResponse<object?>.SuccessResponse(null, "Webhook processed: payment marked as Paid");
             }
@@ -104,14 +120,16 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                     $"Hệ thống đã ghi nhận khoản thanh toán lệ phí xét tuyển cho hồ sơ {payment.PaymentId} của bạn không hợp lệ. " +
                     "Vui lòng liên lạc với nhân viên để hỗ trợ.";
 
-                await _unitOfWork.Notifications.AddAsync(new Notification
+                var notification = new Notification
                 {
                     RecipientUserId = recipientUserId,
                     NotificationType = "Thanh toán",
                     Message = message,
                     IsRead = false,
                     SentAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
-                });
+                };
+
+                await _unitOfWork.Notifications.AddAsync(notification);
                 // Send email confirmation
                 var user = await _unitOfWork.Users.GetByIdAsync(recipientUserId);
                 if (!string.IsNullOrWhiteSpace(user?.Email) && payment.Amount.HasValue)
@@ -125,6 +143,10 @@ public sealed class SepayWebhookCommandHandler : IRequestHandler<SepayWebhookCom
                 }
 
                 await _unitOfWork.SaveChangesAsync();
+
+                // Send real-time notification via SignalR
+                var notificationDto = _mapper.Map<NotificationDto>(notification);
+                await _notificationHubService.SendToUserAsync(recipientUserId, notificationDto);
 
                 return BaseResponse<object?>.SuccessResponse(null, "Webhook processed: invalid payment notification sent");
             }

@@ -2,6 +2,9 @@
 using MAEMS.Infrastructure;
 using MAEMS.MultiAgent;
 using MAEMS.API.Middleware;
+using MAEMS.API.Hubs;
+using MAEMS.API.Services;
+using MAEMS.Application.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -16,6 +19,16 @@ builder.Services.AddControllers();
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddMultiAgentServices(builder.Configuration);
+
+// Add SignalR with configuration
+builder.Services.AddSignalR(options =>
+{
+    options.HandshakeTimeout = TimeSpan.FromSeconds(15);
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+});
+
+// Register NotificationHubService for dependency injection
+builder.Services.AddScoped<INotificationHubService, NotificationHubService>();
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
@@ -39,18 +52,80 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero
     };
+
+    // Configure SignalR JWT authentication
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var path = context.HttpContext.Request.Path;
+
+            // Check if this is a SignalR hub request
+            if (path.StartsWithSegments("/api/hubs"))
+            {
+                string? tokenToUse = null;
+
+                // PRIORITY 1: Authorization Header (WebSocket sends here)
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                {
+                    tokenToUse = authHeader.Substring("Bearer ".Length).Trim();
+                }
+
+                // PRIORITY 2: Query String (fallback for compatibility)
+                if (string.IsNullOrEmpty(tokenToUse))
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    if (!string.IsNullOrEmpty(accessToken))
+                    {
+                        tokenToUse = accessToken;
+                    }
+                }
+
+                // PRIORITY 3: X-Access-Token header
+                if (string.IsNullOrEmpty(tokenToUse))
+                {
+                    var customHeader = context.Request.Headers["X-Access-Token"].ToString();
+                    if (!string.IsNullOrEmpty(customHeader))
+                    {
+                        tokenToUse = customHeader;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(tokenToUse))
+                {
+                    context.Token = tokenToUse;
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
 
-// Add CORS
+// Add CORS - Allow WebSocket with credentials
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(
+                "http://localhost:3000",
+                "https://localhost:3000",
+                "http://localhost:8080",
+                "https://localhost:8080",
+                "http://localhost:8000",
+                "https://localhost:8000",
+                "http://localhost:7238",
+                "https://localhost:7238",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:8080",
+                "http://127.0.0.1:8000"
+              )
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
@@ -112,6 +187,7 @@ app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapHub<NotificationHub>("/api/hubs/notifications");
 app.MapControllers();
 
 app.Run();
