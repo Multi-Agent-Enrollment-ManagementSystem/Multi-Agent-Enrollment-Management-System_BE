@@ -51,12 +51,14 @@ public class CampusRepository : BaseRepository, ICampusRepository
         {
             Name = entity.Name,
             Address = entity.Address,
+            Email = entity.Email,
+            PhoneNumber = entity.PhoneNumber,
             Description = entity.Description,
             IsActive = entity.IsActive
         };
 
         await _context.Campuses.AddAsync(infraCampus);
-        
+
         entity.CampusId = infraCampus.CampusId;
         return entity;
     }
@@ -68,6 +70,8 @@ public class CampusRepository : BaseRepository, ICampusRepository
         {
             infraCampus.Name = entity.Name;
             infraCampus.Address = entity.Address;
+            infraCampus.Email = entity.Email;
+            infraCampus.PhoneNumber = entity.PhoneNumber;
             infraCampus.Description = entity.Description;
             infraCampus.IsActive = entity.IsActive;
 
@@ -100,6 +104,8 @@ public class CampusRepository : BaseRepository, ICampusRepository
             CampusId = infraCampus.CampusId,
             Name = infraCampus.Name ?? string.Empty,
             Address = infraCampus.Address,
+            Email = infraCampus.Email,
+            PhoneNumber = infraCampus.PhoneNumber,
             Description = infraCampus.Description,
             IsActive = infraCampus.IsActive
         };
