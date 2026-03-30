@@ -110,22 +110,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:3000",
-                "https://localhost:3000",
-                "http://localhost:8080",
-                "https://localhost:8080",
-                "http://localhost:8000",
-                "https://localhost:8000",
-                "http://localhost:7238",
-                "https://localhost:7238",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:8080",
-                "http://127.0.0.1:8000"
-              )
+        policy.AllowAnyOrigin()
               .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
+              .AllowAnyHeader();
     });
 });
 
