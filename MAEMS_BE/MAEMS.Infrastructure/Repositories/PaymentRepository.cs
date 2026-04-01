@@ -116,6 +116,34 @@ public class PaymentRepository : IPaymentRepository
         return (items.Select(MapToDomain).ToList(), totalCount);
     }
 
+    public Task<int> CountDistinctPaidApplicantsAsync(CancellationToken cancellationToken = default)
+    {
+        return _context.Payments
+            .AsNoTracking()
+            .Where(p => p.PaymentStatus == "Paid" && p.ApplicantId != null)
+            .Select(p => p.ApplicantId!.Value)
+            .Distinct()
+            .CountAsync(cancellationToken);
+    }
+
+    public Task<int> CountDistinctPaidApplicationsAsync(CancellationToken cancellationToken = default)
+    {
+        return _context.Payments
+            .AsNoTracking()
+            .Where(p => p.PaymentStatus == "Paid" && p.ApplicationId != null)
+            .Select(p => p.ApplicationId!.Value)
+            .Distinct()
+            .CountAsync(cancellationToken);
+    }
+
+    public Task<int> CountNeedCheckingPaymentsAsync(CancellationToken cancellationToken = default)
+    {
+        return _context.Payments
+            .AsNoTracking()
+            .Where(p => p.PaymentStatus == "Need_checking")
+            .CountAsync(cancellationToken);
+    }
+
     public async Task<DomainPayment> AddAsync(DomainPayment entity)
     {
         var infra = new InfraPayment

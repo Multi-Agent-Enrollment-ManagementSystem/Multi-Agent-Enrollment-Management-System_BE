@@ -2,6 +2,7 @@
 using MAEMS.Domain.Interfaces;
 using MAEMS.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
 using System.Linq.Expressions;
 using DomainApplication = MAEMS.Domain.Entities.Application;
 using InfraApplication = MAEMS.Infrastructure.Models.Application;
@@ -338,5 +339,139 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
             .ToListAsync(cancellationToken);
 
         return (items.Select(MapToDomain).ToList(), totalCount);
+    }
+
+    public async Task<IReadOnlyList<(DateTime WeekStart, int Count)>> CountNonDraftByWeekAsync(
+        DateTime? from,
+        DateTime? to,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.Applications
+            .AsNoTracking()
+            .Where(a => a.Status != null && a.Status != "draft" && a.SubmittedAt != null)
+            .AsQueryable();
+
+        if (from.HasValue)
+            query = query.Where(a => a.SubmittedAt >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(a => a.SubmittedAt <= to.Value);
+
+        // Compute week start (Monday) in a SQL-translatable way.
+        // PostgreSQL: date_trunc('day', submitted_at) - (extract(dow from submitted_at) - 1) * interval '1 day'
+        // Note: In PostgreSQL, dow: Sunday=0 ... Saturday=6. We shift to Monday-start week.
+        var grouped = await query
+            .Select(a => new
+            {
+                WeekStart = a.SubmittedAt!.Value.Date.AddDays(-(((int)a.SubmittedAt!.Value.DayOfWeek + 6) % 7))
+            })
+            .GroupBy(x => x.WeekStart)
+            .Select(g => new { WeekStart = g.Key, Count = g.Count() })
+            .OrderBy(x => x.WeekStart)
+            .ToListAsync(cancellationToken);
+
+        return grouped
+            .Select(x => (WeekStart: DateTime.SpecifyKind(x.WeekStart, DateTimeKind.Unspecified), x.Count))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<(int CampusId, string? CampusName, int Count)>> CountByCampusAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // Join Applications -> ProgramAdmissionConfigs -> Campuses
+        // Only count applications where Status != draft
+        var rows = await _context.Applications
+            .AsNoTracking()
+            .Where(a => a.Status != null && a.Status != "draft")
+            .Join(
+                _context.ProgramAdmissionConfigs.AsNoTracking(),
+                a => a.ConfigId,
+                c => c.ConfigId,
+                (a, c) => new { Application = a, Config = c })
+            .Join(
+                _context.Campuses.AsNoTracking(),
+                ac => ac.Config.CampusId,
+                campus => campus.CampusId,
+                (ac, campus) => new { ac.Application, ac.Config, Campus = campus })
+            .GroupBy(x => new { x.Campus.CampusId, x.Campus.Name })
+            .Select(g => new { g.Key.CampusId, CampusName = g.Key.Name, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => (x.CampusId, x.CampusName, x.Count))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<(int ProgramId, string? ProgramName, int Count)>> CountNonDraftByProgramInCampusAsync(
+        int campusId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _context.Applications
+            .AsNoTracking()
+            .Where(a => a.Status != null && a.Status != "draft")
+            .Join(
+                _context.ProgramAdmissionConfigs.AsNoTracking(),
+                a => a.ConfigId,
+                c => c.ConfigId,
+                (a, c) => new { Application = a, Config = c })
+            .Where(x => x.Config.CampusId == campusId)
+            .Join(
+                _context.Programs.AsNoTracking(),
+                ac => ac.Config.ProgramId,
+                p => p.ProgramId,
+                (ac, p) => new { ac.Application, ac.Config, Program = p })
+            .GroupBy(x => new { x.Program.ProgramId, x.Program.ProgramName })
+            .Select(g => new { g.Key.ProgramId, ProgramName = g.Key.ProgramName, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => (x.ProgramId, x.ProgramName, x.Count))
+            .ToList();
+    }
+
+    public async Task<(int NumApproved, int NumRejected, int NumPending)> CountApprovedRejectedPendingAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var row = await _context.Applications
+            .AsNoTracking()
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                NumApproved = g.Count(a => a.Status != null && a.Status == "approved"),
+                NumRejected = g.Count(a => a.Status != null && a.Status == "rejected"),
+                NumPending = g.Count(a => a.Status != null && a.Status != "draft" && a.Status != "approved" && a.Status != "rejected")
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (row == null)
+            return (0, 0, 0);
+
+        return (row.NumApproved, row.NumRejected, row.NumPending);
+    }
+
+    public async Task<IReadOnlyList<(int? AssignedOfficerId, string? AssignedOfficerName, int Count)>> CountByAssignedOfficerAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // Left join Applications -> Users (AssignedOfficer)
+        var rows = await _context.Applications
+            .AsNoTracking()
+            .GroupJoin(
+                _context.Users.AsNoTracking(),
+                a => a.AssignedOfficerId,
+                u => u.UserId,
+                (a, users) => new { Application = a, Users = users })
+            .SelectMany(
+                x => x.Users.DefaultIfEmpty(),
+                (x, u) => new { x.Application, Officer = u })
+            .GroupBy(x => new { x.Application.AssignedOfficerId, OfficerName = x.Officer != null ? x.Officer.Username : null })
+            .Select(g => new { g.Key.AssignedOfficerId, g.Key.OfficerName, Count = g.Count() })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(x => (x.AssignedOfficerId, x.OfficerName, x.Count))
+            .ToList();
     }
 }

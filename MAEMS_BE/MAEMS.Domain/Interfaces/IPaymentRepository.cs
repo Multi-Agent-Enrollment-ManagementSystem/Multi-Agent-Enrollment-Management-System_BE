@@ -22,6 +22,11 @@ public interface IPaymentRepository
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    // SQL-level aggregates for reporting
+    Task<int> CountDistinctPaidApplicantsAsync(CancellationToken cancellationToken = default);
+    Task<int> CountDistinctPaidApplicationsAsync(CancellationToken cancellationToken = default);
+    Task<int> CountNeedCheckingPaymentsAsync(CancellationToken cancellationToken = default);
+
     Task<Payment> AddAsync(Payment entity);
     Task UpdateAsync(Payment entity);
 }
