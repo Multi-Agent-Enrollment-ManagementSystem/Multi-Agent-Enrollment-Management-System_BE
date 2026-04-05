@@ -109,7 +109,7 @@ public class SubmitApplicationCommandHandler : IRequestHandler<SubmitApplication
                 _ = _paymentExpirationService.ScheduleExpirePendingPaymentAsync(
                     payment.PaymentId,
                     TimeSpan.FromMinutes(5),
-                    cancellationToken);
+                    CancellationToken.None);
 
                 var depositDto = _mapper.Map<SubmitApplicationPaymentDto>(payment);
                 depositDto.Url = $"{SEPAY_QR_BASE_URL}?bank={SEPAY_BANK}&acc={SEPAY_ACCOUNT}&template={SEPAY_TEMPLATE}&amount={amount}&des={transactionId}";
