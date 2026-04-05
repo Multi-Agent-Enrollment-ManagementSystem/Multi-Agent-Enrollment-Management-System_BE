@@ -8,5 +8,5 @@ public interface IPaymentExpirationService
     /// <summary>
     /// Fire-and-forget: after <paramref name="delay"/>, if the payment is still pending then mark it as "outdated".
     /// </summary>
-    Task ScheduleExpirePendingPaymentAsync(int paymentId, TimeSpan delay, CancellationToken cancellationToken = default);
+    Task ScheduleExpirePendingPaymentAsync(string transactionId, TimeSpan delay, CancellationToken cancellationToken = default);
 }

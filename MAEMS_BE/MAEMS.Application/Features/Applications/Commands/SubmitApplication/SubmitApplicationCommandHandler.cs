@@ -107,7 +107,7 @@ public class SubmitApplicationCommandHandler : IRequestHandler<SubmitApplication
 
                 // Fire-and-forget: after 5 minutes, if still pending => mark as outdated
                 _ = _paymentExpirationService.ScheduleExpirePendingPaymentAsync(
-                    payment.PaymentId,
+                    transactionId,
                     TimeSpan.FromMinutes(5),
                     CancellationToken.None);
 
