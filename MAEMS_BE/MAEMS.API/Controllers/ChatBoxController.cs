@@ -552,11 +552,13 @@ public class ChatBoxController : ControllerBase
             var admissionTypesDb = await _unitOfWork.AdmissionTypes.GetAllAsync();
             var programConfigsDb = await _unitOfWork.ProgramAdmissionConfigs.GetAllAsync();
             var majorsDb = await _unitOfWork.Majors.GetAllAsync();
+            var campusesDb = await _unitOfWork.Campuses.GetAllAsync();
 
             var programsActive = programsDb.Where(p => p.IsActive == true).ToList();
             var typesActive = admissionTypesDb.Where(a => a.IsActive == true).ToList();
             var configsActive = programConfigsDb.Where(c => c.IsActive == true).ToList();
             var majorsActive = majorsDb.Where(m => m.IsActive == true).ToList();
+            var campusesActive = campusesDb.Where(c => c.IsActive == true).ToList();
 
             return Ok(new
             {
@@ -570,7 +572,9 @@ public class ChatBoxController : ControllerBase
                     programConfigs = programConfigsDb.Count(),
                     programConfigsActive = configsActive.Count,
                     majors = majorsDb.Count(),
-                    majorsActive = majorsActive.Count
+                    majorsActive = majorsActive.Count,
+                    campuses = campusesDb.Count(),
+                    campusesActive = campusesActive.Count
                 },
                 sample = new
                 {
@@ -595,9 +599,17 @@ public class ChatBoxController : ControllerBase
                         c.CampusName,
                         c.IsActive,
                         c.Quota
+                    }),
+                    campuses = campusesActive.Take(3).Select(c => new 
+                    { 
+                        c.CampusId, 
+                        c.Name, 
+                        c.IsActive,
+                        c.Address,
+                        c.Description
                     })
                 },
-                totalEstimatedDocuments = programsActive.Count + typesActive.Count + configsActive.Count + majorsActive.Count
+                totalEstimatedDocuments = programsActive.Count + typesActive.Count + configsActive.Count + majorsActive.Count + campusesActive.Count
             });
         }
         catch (Exception ex)
@@ -683,6 +695,40 @@ public class ChatBoxController : ControllerBase
                 });
             }
 
+            // Load Campuses
+            var campuses = await _unitOfWork.Campuses.GetAllAsync();
+            var campusesActive = campuses.Where(c => c.IsActive == true).ToList();
+
+            _logger.LogInformation($"Found {campusesActive.Count} active campuses");
+
+            foreach (var campus in campusesActive)
+            {
+                var content = $"Campus: {campus.Name}\n";
+                if (!string.IsNullOrEmpty(campus.Address))
+                    content += $"Address: {campus.Address}\n";
+                if (!string.IsNullOrEmpty(campus.Description))
+                    content += $"Description: {campus.Description}\n";
+                if (!string.IsNullOrEmpty(campus.PhoneNumber))
+                    content += $"Phone: {campus.PhoneNumber}\n";
+                if (!string.IsNullOrEmpty(campus.Email))
+                    content += $"Email: {campus.Email}\n";
+
+                ragDocuments.Add(new RagDocument
+                {
+                    Id = $"campus-{campus.CampusId}",
+                    Content = content,
+                    Source = $"Campus_{campus.Name}",
+                    Metadata = new Dictionary<string, string>
+                    {
+                        { "type", "campus" },
+                        { "campus_id", campus.CampusId.ToString() },
+                        { "campus_name", campus.Name },
+                        { "address", campus.Address ?? "" }
+                    },
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
             // Load Admission Types
             var admissionTypes = await _unitOfWork.AdmissionTypes.GetAllAsync();
             var typesActive = admissionTypes.Where(a => a.IsActive == true).ToList();
@@ -752,6 +798,7 @@ public class ChatBoxController : ControllerBase
                     hint = "Make sure data exists and IsActive = true. Check GET /debug/database-info",
                     totalPrograms = programsActive.Count,
                     totalMajors = majorsActive.Count,
+                    totalCampuses = campusesActive.Count,
                     totalAdmissionTypes = typesActive.Count,
                     totalConfigs = configsActive.Count
                 });
@@ -781,6 +828,7 @@ public class ChatBoxController : ControllerBase
                 {
                     programs = ragDocuments.Count(d => d.Metadata?["type"] == "program"),
                     majors = ragDocuments.Count(d => d.Metadata?["type"] == "major"),
+                    campuses = ragDocuments.Count(d => d.Metadata?["type"] == "campus"),
                     admissionTypes = ragDocuments.Count(d => d.Metadata?["type"] == "admission_type"),
                     admissionConfigs = ragDocuments.Count(d => d.Metadata?["type"] == "admission_config")
                 },
