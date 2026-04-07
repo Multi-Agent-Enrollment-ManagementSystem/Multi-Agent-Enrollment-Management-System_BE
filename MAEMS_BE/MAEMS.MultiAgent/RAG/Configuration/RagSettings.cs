@@ -59,15 +59,20 @@ public class QdrantSettings
     public string Url { get; set; } = "http://localhost:6333";
 
     /// <summary>
+    /// API Key for Qdrant Cloud authentication (optional for local deployment)
+    /// </summary>
+    public string? ApiKey { get; set; }
+
+    /// <summary>
     /// Collection name for admission documents (default: "admission_documents")
     /// </summary>
     public string CollectionName { get; set; } = "admission_documents";
 
     /// <summary>
     /// Vector dimension for embeddings (must match embedding model output)
-    /// Gemini embeddings produce 768-dimensional vectors
+    /// Gemini gemini-embedding-001 produces 3072-dimensional vectors
     /// </summary>
-    public int VectorDimension { get; set; } = 768;
+    public int VectorDimension { get; set; } = 3072;
 
     /// <summary>
     /// Vector similarity metric (cosine, euclidean, dot)

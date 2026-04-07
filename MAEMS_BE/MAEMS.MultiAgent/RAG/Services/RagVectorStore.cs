@@ -37,6 +37,13 @@ public class RagVectorStore : IRagVectorStore
 
         _httpClient.BaseAddress = new Uri(_qdrantSettings.Url);
         _httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+        // Add API Key authentication for Qdrant Cloud
+        if (!string.IsNullOrEmpty(_qdrantSettings.ApiKey))
+        {
+            _httpClient.DefaultRequestHeaders.Add("api-key", _qdrantSettings.ApiKey);
+            _logger.LogInformation("Qdrant API Key authentication configured");
+        }
     }
 
     private async Task<bool> VerifyConnectionAsync(CancellationToken cancellationToken)

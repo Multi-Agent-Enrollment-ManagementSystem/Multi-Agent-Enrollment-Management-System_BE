@@ -204,6 +204,151 @@ public class ChatBoxController : ControllerBase
     }
 
     /// <summary>
+    /// Test connection to Qdrant Cloud (or local Qdrant)
+    /// Verifies URL, API Key, and collection accessibility
+    /// </summary>
+    [HttpGet("test-qdrant-connection")]
+    [AllowAnonymous]
+    public async Task<IActionResult> TestQdrantConnection(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Testing Qdrant connection...");
+
+            var testResult = new
+            {
+                timestamp = DateTime.UtcNow,
+                testName = "Qdrant Connection Test",
+                steps = new List<object>()
+            };
+
+            // Step 1: Check Qdrant health endpoint
+            _logger.LogInformation("Step 1: Checking Qdrant health endpoint");
+            try
+            {
+                var count = await _ragVectorStore.GetDocumentCountAsync(cancellationToken);
+
+                testResult.steps.Add(new
+                {
+                    step = 1,
+                    name = "Qdrant Health Check",
+                    status = "✅ Success",
+                    message = "Successfully connected to Qdrant",
+                    documentCount = count
+                });
+            }
+            catch (Exception ex)
+            {
+                testResult.steps.Add(new
+                {
+                    step = 1,
+                    name = "Qdrant Health Check",
+                    status = "❌ Failed",
+                    error = ex.Message,
+                    hint = "Check if Qdrant URL is correct and service is running"
+                });
+
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, testResult);
+            }
+
+            // Step 2: Test a simple embedding generation
+            _logger.LogInformation("Step 2: Testing Gemini embedding generation");
+            try
+            {
+                var testQuery = "Test query for connection verification";
+                var embedding = await _ragRetrievalService.RetrieveAsync(testQuery, 1, cancellationToken);
+
+                testResult.steps.Add(new
+                {
+                    step = 2,
+                    name = "Embedding Generation Test",
+                    status = "✅ Success",
+                    message = "Successfully generated embedding via Gemini API",
+                    retrievedDocs = embedding.Count()
+                });
+            }
+            catch (Exception ex)
+            {
+                testResult.steps.Add(new
+                {
+                    step = 2,
+                    name = "Embedding Generation Test",
+                    status = "⚠️ Warning",
+                    error = ex.Message,
+                    hint = "Check Gemini API Key or collection might be empty"
+                });
+            }
+
+            // Step 3: Verify collection configuration
+            _logger.LogInformation("Step 3: Verifying collection configuration");
+            try
+            {
+                var docCount = await _ragVectorStore.GetDocumentCountAsync(cancellationToken);
+
+                testResult.steps.Add(new
+                {
+                    step = 3,
+                    name = "Collection Status",
+                    status = docCount > 0 ? "✅ Ready" : "⚠️ Empty",
+                    collectionName = "admission_documents",
+                    documentCount = docCount,
+                    message = docCount > 0 
+                        ? $"Collection has {docCount} documents and is ready for queries" 
+                        : "Collection exists but is empty. Run POST /api/chatbox/index-from-database to populate it"
+                });
+            }
+            catch (Exception ex)
+            {
+                testResult.steps.Add(new
+                {
+                    step = 3,
+                    name = "Collection Status",
+                    status = "❌ Failed",
+                    error = ex.Message,
+                    hint = "Collection might not exist. It will be created automatically when indexing documents."
+                });
+            }
+
+            // Summary
+            var allSuccess = testResult.steps.All(s => 
+            {
+                var step = (dynamic)s;
+                return step.status.ToString().Contains("Success") || step.status.ToString().Contains("Ready");
+            });
+
+            return Ok(new
+            {
+                testResult.timestamp,
+                testResult.testName,
+                overallStatus = allSuccess ? "✅ All Tests Passed" : "⚠️ Some Tests Failed",
+                recommendation = allSuccess 
+                    ? "Qdrant Cloud is configured correctly and ready to use!" 
+                    : "Please check the failed steps above and fix configuration",
+                testResult.steps,
+                nextSteps = new
+                {
+                    step1 = allSuccess && testResult.steps.Any(s => ((dynamic)s).documentCount == 0)
+                        ? "Run POST /api/chatbox/index-from-database to populate the collection"
+                        : "Collection is ready for queries",
+                    step2 = "Test a chat query with POST /api/chatbox/ask",
+                    step3 = "Monitor performance in production"
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during Qdrant connection test");
+            return StatusCode(StatusCodes.Status500InternalServerError, new
+            {
+                status = "❌ Test Failed",
+                error = ex.Message,
+                stackTrace = ex.StackTrace,
+                hint = "Check application logs for more details"
+            });
+        }
+    }
+
+    /// <summary>
     /// Debug endpoint to check RAG system status and collection info
     /// </summary>
     //[HttpGet("debug/rag-status")]
@@ -460,82 +605,7 @@ public class ChatBoxController : ControllerBase
     /// <summary>
     /// Test endpoint to index sample documents for RAG (Development only)
     /// </summary>
-    [HttpPost("test-index-documents")]
-    [AllowAnonymous]
-    public async Task<IActionResult> TestIndexDocuments(CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Starting test document indexing");
-
-            // Create sample documents for testing
-            var sampleDocuments = new List<RagDocument>
-            {
-                new RagDocument
-                {
-                    Id = "doc-001",
-                    Content = "Admission requirements: Applicants must have a bachelor's degree in a related field. " +
-                             "Minimum GPA of 3.0 is required. TOEFL score of at least 80 is needed for international students.",
-                    Source = "AdmissionGuide.pdf",
-                    Metadata = new Dictionary<string, string> { { "section", "requirements" } },
-                    CreatedAt = DateTime.UtcNow
-                },
-                new RagDocument
-                {
-                    Id = "doc-002",
-                    Content = "Application deadline: The application deadline for Fall 2024 is March 31, 2024. " +
-                             "Late applications may be considered on a rolling basis if seats are available.",
-                    Source = "ImportantDates.pdf",
-                    Metadata = new Dictionary<string, string> { { "section", "deadline" } },
-                    CreatedAt = DateTime.UtcNow
-                },
-                new RagDocument
-                {
-                    Id = "doc-003",
-                    Content = "Tuition and fees: Annual tuition is $45,000. Additional fees include $2,000 for health insurance, " +
-                             "$1,500 for technology fee, and $500 for student activity fee.",
-                    Source = "FinancialInformation.pdf",
-                    Metadata = new Dictionary<string, string> { { "section", "fees" } },
-                    CreatedAt = DateTime.UtcNow
-                },
-                new RagDocument
-                {
-                    Id = "doc-004",
-                    Content = "Scholarship opportunities: Merit-based scholarships up to $20,000 are available. " +
-                             "Need-based aid is also offered to qualified applicants. FAFSA completion is required.",
-                    Source = "Scholarships.pdf",
-                    Metadata = new Dictionary<string, string> { { "section", "financial_aid" } },
-                    CreatedAt = DateTime.UtcNow
-                },
-                new RagDocument
-                {
-                    Id = "doc-005",
-                    Content = "Program overview: This master's program focuses on advanced topics in the field. " +
-                             "Students will complete 36 credit hours of coursework including core classes, electives, and a capstone project.",
-                    Source = "ProgramDescription.pdf",
-                    Metadata = new Dictionary<string, string> { { "section", "program" } },
-                    CreatedAt = DateTime.UtcNow
-                }
-            };
-
-            // Index the documents
-            await _ragRetrievalService.IndexDocumentsAsync(sampleDocuments, cancellationToken);
-
-            _logger.LogInformation("Test document indexing completed successfully");
-            return Ok(new
-            {
-                message = "Test documents indexed successfully",
-                count = sampleDocuments.Count,
-                documents = sampleDocuments.Select(d => new { d.Id, d.Source })
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during test indexing");
-            return StatusCode(StatusCodes.Status500InternalServerError,
-                new { error = "Test indexing failed", message = ex.Message });
-        }
-    }
+    
 
     /// <summary>
     /// Debug: Check what data exists in database before indexing
