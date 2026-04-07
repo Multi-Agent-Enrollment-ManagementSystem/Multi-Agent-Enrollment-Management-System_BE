@@ -30,7 +30,8 @@ public static class DependencyInjection
         services.AddScoped<ILlmChatLogRepository, LlmChatLogRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
 
-        // Register LlmChatLogRepositoryLegacy for backward compatibility with ChatBoxAgent and ChatBoxController
+        // Register LlmChatLogRepository as concrete type and legacy interface for backward compatibility with ChatBoxAgent and ChatBoxController
+        services.AddScoped<LlmChatLogRepository>();
         services.AddScoped<ILlmChatLogRepositoryLegacy>(sp => sp.GetRequiredService<LlmChatLogRepository>());
 
         // Register Unit of Work
