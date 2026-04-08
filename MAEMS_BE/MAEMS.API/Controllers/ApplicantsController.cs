@@ -164,7 +164,7 @@ public class ApplicantsController : ControllerBase
     /// <param name="id">Applicant id</param>
     /// <returns>Applicant documents</returns>
     [HttpGet("{id}/documents")]
-    [Authorize(Roles = "officer,admin,applicant")]
+    [Authorize(Roles = "officer,admin,applicant,qa")]
     public async Task<IActionResult> GetApplicantDocuments(int id)
     {
         var result = await _mediator.Send(new GetApplicantDocumentsQuery(id));
