@@ -29,7 +29,7 @@ public class LlmChatLogsController : ControllerBase
     /// <param name="pageSize">Page size (default: 20, max: 100)</param>
     /// <returns>Paged list of LLM chat logs</returns>
     [HttpGet]
-    [Authorize(Roles = "admin,QA")]
+    [Authorize(Roles = "admin,qa")]
     public async Task<IActionResult> GetAllLlmChatLogs(
         [FromQuery] int? userId = null,
         [FromQuery] string? userQuery = null,
@@ -64,7 +64,7 @@ public class LlmChatLogsController : ControllerBase
     /// <param name="id">LLM chat log ID</param>
     /// <returns>LLM chat log details</returns>
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,QA")]
+    [Authorize(Roles = "admin,qa")]
     public async Task<IActionResult> GetLlmChatLogById(int id)
     {
         var query = new GetLlmChatLogByIdQuery(id);

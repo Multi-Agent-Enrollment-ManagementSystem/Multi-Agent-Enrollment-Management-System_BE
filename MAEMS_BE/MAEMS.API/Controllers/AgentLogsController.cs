@@ -31,7 +31,7 @@ public class AgentLogsController : ControllerBase
     /// <param name="pageSize">Page size (default: 20, max: 100)</param>
     /// <returns>Paged list of agent logs</returns>
     [HttpGet]
-    [Authorize(Roles = "admin,QA")]
+    [Authorize(Roles = "admin,qa")]
     public async Task<IActionResult> GetAllAgentLogs(
         [FromQuery] int? applicationId = null,
         [FromQuery] int? documentId = null,
@@ -70,7 +70,7 @@ public class AgentLogsController : ControllerBase
     /// <param name="id">Agent log ID</param>
     /// <returns>Agent log details</returns>
     [HttpGet("{id}")]
-    [Authorize(Roles = "admin,QA")]
+    [Authorize(Roles = "admin,qa")]
     public async Task<IActionResult> GetAgentLogById(int id)
     {
         var query = new GetAgentLogByIdQuery(id);
