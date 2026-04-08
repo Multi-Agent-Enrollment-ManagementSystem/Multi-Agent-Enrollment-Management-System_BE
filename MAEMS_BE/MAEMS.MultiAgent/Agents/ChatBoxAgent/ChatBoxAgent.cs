@@ -20,7 +20,6 @@ public sealed class ChatBoxAgent : IChatBoxAgent
     private readonly postgresContext _dbContext;
     private readonly IRagRetrievalService _ragRetrievalService;
     private readonly ILogger<ChatBoxAgent> _logger;
-    private readonly QueryClassifier _queryClassifier;
 
     public ChatBoxAgent(
         IGeminiService geminiService,
@@ -34,7 +33,6 @@ public sealed class ChatBoxAgent : IChatBoxAgent
         _dbContext = dbContext;
         _ragRetrievalService = ragRetrievalService;
         _logger = logger;
-        _queryClassifier = new QueryClassifier();
     }
 
     public async Task<string> RespondAsync(
@@ -46,11 +44,7 @@ public sealed class ChatBoxAgent : IChatBoxAgent
 
         try
         {
-            // 1. Classify query to determine if relationship data is needed
-            var queryType = _queryClassifier.ClassifyQuery(userQuery);
-            _logger.LogInformation("Query classified as: {QueryType}", queryType);
-
-            // 2. Try to retrieve relevant documents from RAG system
+            // 1. Try to retrieve relevant documents from RAG system
             string ragContext = "No relevant information found.";
             try
             {
@@ -61,18 +55,6 @@ public sealed class ChatBoxAgent : IChatBoxAgent
                     cancellationToken);
                 _logger.LogInformation("RAG retrieval completed. Context length: {Length} characters", ragContext.Length);
                 _logger.LogDebug("RAG Context: {RagContext}", ragContext);
-
-                // 3. If query requires relationship data, enrich RAG context with SQL joins
-                if (queryType == QueryType.RelationshipBased)
-                {
-                    _logger.LogInformation("Query requires relationship data. Enriching RAG context with SQL...");
-                    var relationshipContext = await EnrichWithRelationshipDataAsync(userQuery, cancellationToken);
-                    if (!string.IsNullOrEmpty(relationshipContext))
-                    {
-                        ragContext += "\n\n" + relationshipContext;
-                        _logger.LogInformation("RAG context enriched with relationship data. New length: {Length}", ragContext.Length);
-                    }
-                }
             }
             catch (Exception ex)
             {
@@ -80,21 +62,21 @@ public sealed class ChatBoxAgent : IChatBoxAgent
                 ragContext = ""; // Will trigger fallback to DB-only in prompt building
             }
 
-            // 4. Build system prompt with RAG context + admission rules
+            // 2. Build system prompt with RAG context + admission rules
             var systemPrompt = await BuildSystemPromptWithRagAsync(ragContext, cancellationToken);
             _logger.LogDebug("System prompt built. Prompt length: {Length} characters", systemPrompt.Length);
 
-            // 5. Get conversation history (last 5 messages)
+            // 3. Get conversation history (last 5 messages)
             var conversationHistory = await GetConversationHistoryAsync(userId, 5, cancellationToken);
 
-            // 6. Call Gemini API
+            // 4. Call Gemini API
             var llmResponse = await _geminiService.GetResponseAsync(
                 userQuery,
                 conversationHistory,
                 systemPrompt,
                 cancellationToken);
 
-            // 7. Save to database
+            // 5. Save to database
             var chatLog = new LlmChatLog
             {
                 UserId = userId,
@@ -293,104 +275,5 @@ Trả lời bằng Tiếng Việt, thân thiện và chuyên nghiệp. Nếu câ
         }
 
         return history;
-    }
-
-    /// <summary>
-    /// Enrich RAG context with relationship data from database when query requires it
-    /// </summary>
-    private async Task<string> EnrichWithRelationshipDataAsync(string query, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var enrichedContext = new System.Text.StringBuilder();
-            enrichedContext.AppendLine("**RELATIONSHIP DATA (JOIN RESULTS):**\n");
-
-            // Example: If query mentions a program/major, get related admission types and configs
-            var lowerQuery = query.ToLower();
-
-            // Pattern 1: "ngành X có những phương thức nào?"
-            if (lowerQuery.Contains("phương thức") || lowerQuery.Contains("admission type"))
-            {
-                var programConfigs = await _dbContext.ProgramAdmissionConfigs
-                    .Where(c => c.IsActive == true)
-                    .Select(c => new
-                    {
-                        c.ProgramName,
-                        c.AdmissionTypeName,
-                        c.CampusName,
-                        c.Quota
-                    })
-                    .Take(20)
-                    .ToListAsync(cancellationToken);
-
-                if (programConfigs.Any())
-                {
-                    enrichedContext.AppendLine("**Program → Admission Type Relationships:**");
-                    foreach (var config in programConfigs)
-                    {
-                        enrichedContext.AppendLine($"- {config.ProgramName} tại {config.CampusName}: {config.AdmissionTypeName} (Chỉ tiêu: {config.Quota})");
-                    }
-                    enrichedContext.AppendLine();
-                }
-            }
-
-            // Pattern 2: "campus nào có ngành X?"
-            if (lowerQuery.Contains("campus") || lowerQuery.Contains("cơ sở"))
-            {
-                var campusPrograms = await _dbContext.ProgramAdmissionConfigs
-                    .Where(c => c.IsActive == true)
-                    .GroupBy(c => c.CampusName)
-                    .Select(g => new
-                    {
-                        CampusName = g.Key,
-                        Programs = g.Select(c => c.ProgramName).Distinct().ToList()
-                    })
-                    .ToListAsync(cancellationToken);
-
-                if (campusPrograms.Any())
-                {
-                    enrichedContext.AppendLine("**Campus → Programs Relationships:**");
-                    foreach (var campus in campusPrograms)
-                    {
-                        enrichedContext.AppendLine($"- {campus.CampusName}: {string.Join(", ", campus.Programs.Take(10))}");
-                    }
-                    enrichedContext.AppendLine();
-                }
-            }
-
-            // Pattern 3: "chỉ tiêu tuyển sinh của ngành X"
-            if (lowerQuery.Contains("chỉ tiêu") || lowerQuery.Contains("quota"))
-            {
-                var quotas = await _dbContext.ProgramAdmissionConfigs
-                    .Where(c => c.IsActive == true && c.Quota.HasValue)
-                    .Select(c => new
-                    {
-                        c.ProgramName,
-                        c.AdmissionTypeName,
-                        c.CampusName,
-                        c.Quota
-                    })
-                    .Take(15)
-                    .ToListAsync(cancellationToken);
-
-                if (quotas.Any())
-                {
-                    enrichedContext.AppendLine("**Enrollment Quotas:**");
-                    foreach (var quota in quotas)
-                    {
-                        enrichedContext.AppendLine($"- {quota.ProgramName} ({quota.AdmissionTypeName}): {quota.Quota} chỉ tiêu");
-                    }
-                    enrichedContext.AppendLine();
-                }
-            }
-
-            var result = enrichedContext.ToString();
-            return result.Length > 100 ? result : string.Empty; // Only return if we found meaningful data
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error enriching context with relationship data");
-            return string.Empty;
-        }
     }
 }
