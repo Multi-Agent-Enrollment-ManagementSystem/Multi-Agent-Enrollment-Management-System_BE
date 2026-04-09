@@ -144,6 +144,81 @@ public sealed class AgentLogRepository : IAgentLogRepository
         return (items.Select(MapToDomain).ToList(), totalCount);
     }
 
+    public async Task<(IReadOnlyList<(DomainAgentLog Log, int? ApplicantId)> Items, int TotalCount)> GetAgentLogsPagedWithApplicantIdAsync(
+        int? applicationId = null,
+        int? documentId = null,
+        string? agentType = null,
+        string? status = null,
+        string? search = null,
+        string? sortBy = null,
+        bool sortDesc = false,
+        int pageNumber = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1) pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        // LEFT JOIN AgentLogs -> Applications to get ApplicantId in SQL
+        var query = _context.AgentLogs
+            .AsNoTracking()
+            .Select(al => new
+            {
+                Log = al,
+                ApplicantId = al.Application != null ? al.Application.ApplicantId : (int?)null
+            })
+            .AsQueryable();
+
+        if (applicationId.HasValue)
+            query = query.Where(x => x.Log.ApplicationId == applicationId.Value);
+
+        if (documentId.HasValue)
+            query = query.Where(x => x.Log.DocumentId == documentId.Value);
+
+        if (!string.IsNullOrWhiteSpace(agentType))
+            query = query.Where(x => EF.Functions.ILike(x.Log.AgentType, $"%{agentType}%"));
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(x => EF.Functions.ILike(x.Log.Status, $"%{status}%"));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Log.AgentType, $"%{search}%") ||
+                EF.Functions.ILike(x.Log.Action, $"%{search}%") ||
+                EF.Functions.ILike(x.Log.Status, $"%{search}%") ||
+                EF.Functions.ILike(x.Log.OutputData, $"%{search}%"));
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        sortBy = string.IsNullOrWhiteSpace(sortBy) ? "logId" : sortBy.Trim();
+        query = sortBy.ToLowerInvariant() switch
+        {
+            "logid" => sortDesc ? query.OrderByDescending(x => x.Log.LogId) : query.OrderBy(x => x.Log.LogId),
+            "applicationid" => sortDesc ? query.OrderByDescending(x => x.Log.ApplicationId) : query.OrderBy(x => x.Log.ApplicationId),
+            "documentid" => sortDesc ? query.OrderByDescending(x => x.Log.DocumentId) : query.OrderBy(x => x.Log.DocumentId),
+            "agenttype" => sortDesc ? query.OrderByDescending(x => x.Log.AgentType) : query.OrderBy(x => x.Log.AgentType),
+            "action" => sortDesc ? query.OrderByDescending(x => x.Log.Action) : query.OrderBy(x => x.Log.Action),
+            "status" => sortDesc ? query.OrderByDescending(x => x.Log.Status) : query.OrderBy(x => x.Log.Status),
+            "createdat" => sortDesc ? query.OrderByDescending(x => x.Log.CreatedAt) : query.OrderBy(x => x.Log.CreatedAt),
+            _ => sortDesc ? query.OrderByDescending(x => x.Log.LogId) : query.OrderBy(x => x.Log.LogId)
+        };
+
+        var skip = (pageNumber - 1) * pageSize;
+        var rows = await query
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var mapped = rows
+            .Select(x => (MapToDomain(x.Log), x.ApplicantId))
+            .ToList();
+
+        return (mapped, totalCount);
+    }
+
     private static DomainAgentLog MapToDomain(InfraAgentLog infra)
     {
         return new DomainAgentLog

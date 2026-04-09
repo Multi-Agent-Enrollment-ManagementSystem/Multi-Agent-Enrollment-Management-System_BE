@@ -6,6 +6,8 @@ public class AgentLogDto
 
     public int? ApplicationId { get; set; }
 
+    public int? ApplicantId { get; set; }
+
     public int? DocumentId { get; set; }
 
     public string AgentType { get; set; } = string.Empty;

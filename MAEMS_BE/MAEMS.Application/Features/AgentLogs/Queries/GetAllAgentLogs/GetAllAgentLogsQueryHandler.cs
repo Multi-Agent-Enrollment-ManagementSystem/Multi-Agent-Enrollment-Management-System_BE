@@ -22,7 +22,7 @@ public class GetAllAgentLogsQueryHandler : IRequestHandler<GetAllAgentLogsQuery,
     {
         try
         {
-            var (items, totalCount) = await _unitOfWork.AgentLogs.GetAgentLogsPagedAsync(
+            var (rows, totalCount) = await _unitOfWork.AgentLogs.GetAgentLogsPagedWithApplicantIdAsync(
                 request.ApplicationId,
                 request.DocumentId,
                 request.AgentType,
@@ -34,7 +34,14 @@ public class GetAllAgentLogsQueryHandler : IRequestHandler<GetAllAgentLogsQuery,
                 request.PageSize,
                 cancellationToken);
 
-            var dtos = _mapper.Map<List<AgentLogDto>>(items);
+            var dtos = rows
+                .Select(x =>
+                {
+                    var dto = _mapper.Map<AgentLogDto>(x.Log);
+                    dto.ApplicantId = x.ApplicantId;
+                    return dto;
+                })
+                .ToList();
 
             var paged = new PagedResponse<AgentLogDto>
             {
@@ -46,7 +53,8 @@ public class GetAllAgentLogsQueryHandler : IRequestHandler<GetAllAgentLogsQuery,
 
             return BaseResponse<PagedResponse<AgentLogDto>>.SuccessResponse(
                 paged,
-                $"Agent logs retrieved successfully. Found {totalCount} agent log(s).");
+                $"Agent logs retrieved successfully. Found {totalCount} agent log(s)."
+            );
         }
         catch (Exception ex)
         {

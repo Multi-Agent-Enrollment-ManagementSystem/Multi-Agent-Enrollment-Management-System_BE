@@ -33,6 +33,13 @@ public class GetAgentLogByIdQueryHandler : IRequestHandler<GetAgentLogByIdQuery,
 
             var agentLogDto = _mapper.Map<AgentLogDto>(agentLog);
 
+            // Enrich with ApplicantId (derived from Application)
+            if (agentLog.ApplicationId.HasValue)
+            {
+                var application = await _unitOfWork.Applications.GetByIdAsync(agentLog.ApplicationId.Value);
+                agentLogDto.ApplicantId = application?.ApplicantId;
+            }
+
             return BaseResponse<AgentLogDto>.SuccessResponse(
                 agentLogDto,
                 "Agent log retrieved successfully.");
