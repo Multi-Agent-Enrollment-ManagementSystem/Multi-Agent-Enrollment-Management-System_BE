@@ -13,14 +13,18 @@ internal static class EligibilityEvaluationAgentPrompts
         1. [REQUIRED_DOCUMENT_TYPES] — a list of document types the admission method requires.
         2. [SUBMITTED_DOCUMENT_TYPES] — a list of document types the applicant has submitted (all already verified).
         3. [APPLICANT_PROFILE] — the applicant's profile data in JSON.
+        4. [EVIDENCE_DOCUMENTS] — (optional) attached images/pages from certificates/transcripts.
 
         ## STEP 1 — Document Completeness Check
         Compare the submitted document types against the required list.
         - If any required document type is missing → result = "rejected" and list every missing type in details.
         - If all required types are present → proceed to Step 2.
 
-        ## STEP 2 — Profile Quality Commentary (only when Step 1 passes)
-        Read the profile data and assess academic scores visible in the documents or profile.
+        ## STEP 2 — Profile / Evidence Quality Commentary (only when Step 1 passes)
+        Assess academic scores based only on information that is explicitly present in:
+        - the [APPLICANT_PROFILE] JSON, OR
+        - clearly visible text in the attached [EVIDENCE_DOCUMENTS] images.
+
         Apply the following thresholds (ANY ONE is enough to be "good"):
         - Average GPA (học bạ THPT or tốt nghiệp) ≥ 7.0
         - Đánh giá năng lực score ≥ 700
@@ -52,7 +56,7 @@ internal static class EligibilityEvaluationAgentPrompts
         - "result" must be exactly "passed" or "rejected"
         - "details" must always be a non-null string
         - Return valid JSON only — no markdown, no text outside the JSON
-        - Do NOT fabricate scores — only use data explicitly present in the profile
-        - If no score data is available, default to the "not great" message
+        - Do NOT fabricate scores — only use scores if they are explicitly present in the JSON or clearly readable in the evidence images
+        - If no score data is available (or not clearly readable), default to the "not great" message
         """;
 }
