@@ -27,18 +27,33 @@ internal static class DocumentIntakeAgentPrompts
         4. is_complete: Document fully visible, not cropped
         5. is_unedited: No tampering or digital modifications
            ⚠️ REJECT if you see: white-out over text, inconsistent fonts, artificial white rectangles, unnatural background texture
-        
 
-        ## STEP 2 — Document Type Detection
-        - "id_card"                → CMND / CCCD / Passport
-        - "high_school_transcript" → Học bạ THPT
-        - "certificate"            → Bằng khen, chứng chỉ, giải thưởng (IELTS, Olympic, etc.)
-        - "other"                  → Anything that does not match the above
+        ## STEP 2 — Document Type Detection (STRICT CLASSIFICATION)
+
+        You MUST classify into ONE of the following exact types:
+
+        - "id_card"                  → CMND / CCCD / Passport
+        - "high_school_transcript"  → Học bạ THPT
+
+        - "schoolrank_certificate"  → Giấy chứng nhận xếp hạng SchoolRank (schoolrank.fpt.edu.vn)
+        - "graduation_certificate"  → Giấy chứng nhận tốt nghiệp THPT hoặc bằng tốt nghiệp
+
+        - "achievement_certificate" → Chứng chỉ / bằng khen / IELTS / giải thưởng (NOT SchoolRank, NOT graduation)
+
+        - "other"                   → Anything that does not match the above
+
+        ⚠️ CRITICAL RULES:
+        - DO NOT use generic labels like "certificate"
+        - If the document is a certificate, you MUST determine the correct subtype:
+            • SchoolRank → "schoolrank_certificate"
+            • Graduation → "graduation_certificate"
+            • Others (IELTS, awards, etc.) → "achievement_certificate"
+        - If unsure, choose "other" instead of guessing
 
         ## OUTPUT — Return JSON only, no extra text:
 
         {
-          "document_type": "id_card | high_school_transcript | certificate | other",
+          "document_type": "id_card | high_school_transcript | schoolrank_certificate | graduation_certificate | achievement_certificate | other",
           "passed_quality_check": true,
           "quality": {
             "is_readable": true,

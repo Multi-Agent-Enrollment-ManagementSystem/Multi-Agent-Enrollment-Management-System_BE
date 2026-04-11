@@ -36,6 +36,14 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         PropertyNameCaseInsensitive = true
     };
 
+    private static readonly HashSet<string> ImageExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png" };
+
+    private static readonly HashSet<string> PdfExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".pdf" };
+
+    private readonly DocumentIntakeAgentPdfConverter _pdfConverter;
+
     public EligibilityEvaluationAgent(
         HttpClient httpClient,
         IServiceScopeFactory scopeFactory,
@@ -45,6 +53,8 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         _httpClient = httpClient;
         _scopeFactory = scopeFactory;
         _logger = logger;
+
+        _pdfConverter = new DocumentIntakeAgentPdfConverter(logger);
 
         _apiUrl = configuration["Ollama:ApiUrl"]
             ?? throw new InvalidOperationException("Ollama:ApiUrl is not configured");
@@ -109,14 +119,19 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+            // Build evidence images for score-related certificates so LLM can assess Step 2.
+            // We intentionally keep this narrow to avoid sending too many pages.
+            var evidenceImages = await BuildEvidenceImagesAsync(documents);
+
             _logger.LogInformation(
-                "EligibilityEvaluationAgent: Required={Required} | Submitted={Submitted} for ApplicationId={ApplicationId}",
+                "EligibilityEvaluationAgent: Required={Required} | Submitted={Submitted} | EvidenceImages={EvidenceCount} for ApplicationId={ApplicationId}",
                 string.Join(",", requiredDocTypes),
                 string.Join(",", submittedDocTypes),
+                evidenceImages.Count,
                 applicationId);
 
             // ── Call LLM ──────────────────────────────────────────────────
-            var responseBody = await CallOllamaAsync(requiredDocTypes, submittedDocTypes, applicantJson, applicationId);
+            var responseBody = await CallOllamaAsync(requiredDocTypes, submittedDocTypes, applicantJson, evidenceImages, applicationId);
 
             // Save raw LLM response to AgentLog (application-level)
             await unitOfWork.AgentLogs.AddAsync(new AgentLog
@@ -205,29 +220,33 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         List<string> requiredDocTypes,
         List<string> submittedDocTypes,
         string applicantJson,
+        List<string> evidenceImagesBase64,
         int applicationId)
     {
         var userPrompt =
             $"[REQUIRED_DOCUMENT_TYPES]\n{string.Join(", ", requiredDocTypes.DefaultIfEmpty("(none specified)"))}\n\n" +
             $"[SUBMITTED_DOCUMENT_TYPES]\n{string.Join(", ", submittedDocTypes.DefaultIfEmpty("(none)"))}\n\n" +
             $"[APPLICANT_PROFILE]\n{applicantJson}\n\n" +
+            "[EVIDENCE_DOCUMENTS]\n" +
+            "Attached are images/pages from submitted certificates (schoolrank/graduation/achievement) for score verification.\n\n" +
             "Please evaluate the applicant's eligibility.";
 
         var requestBody = new OllamaChatRequest
         {
-            Model  = _modelName,
+            Model = _modelName,
             Stream = false,
             Messages =
             [
                 new OllamaMessage
                 {
-                    Role    = "system",
+                    Role = "system",
                     Content = EligibilityEvaluationAgentPrompts.Evaluation
                 },
                 new OllamaMessage
                 {
-                    Role    = "user",
-                    Content = userPrompt
+                    Role = "user",
+                    Content = userPrompt,
+                    Images = evidenceImagesBase64.Count > 0 ? evidenceImagesBase64 : null
                 }
             ]
         };
@@ -254,6 +273,79 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             applicationId, responseBody);
 
         return responseBody;
+    }
+
+    private async Task<List<string>> BuildEvidenceImagesAsync(List<Document> documents)
+    {
+        // Limit to these document types for scoring evidence.
+        var evidenceTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "schoolrank_certificate",
+            "graduation_certificate",
+            "achievement_certificate"
+        };
+
+        var evidenceDocs = documents
+            .Where(d => !string.IsNullOrWhiteSpace(d.DocumentType)
+                        && evidenceTypes.Contains(d.DocumentType!)
+                        && !string.IsNullOrWhiteSpace(d.FilePath)
+                        && !string.IsNullOrWhiteSpace(d.FileName))
+            .ToList();
+
+        // Keep payload bounded.
+        const int maxDocuments = 3;
+        const int maxImagesPerPdf = 2;
+
+        var images = new List<string>();
+
+        foreach (var doc in evidenceDocs.Take(maxDocuments))
+        {
+            try
+            {
+                var fileBytes = await DownloadBytesAsync(doc.FilePath!, doc.FileName!);
+                var docImages = PrepareImagesFromBytes(fileBytes, doc.FileName!, maxImagesPerPdf);
+                images.AddRange(docImages);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "EligibilityEvaluationAgent: Failed to load evidence document '{FileName}' (Type={Type}). Skipping.",
+                    doc.FileName, doc.DocumentType);
+            }
+        }
+
+        return images;
+    }
+
+    private async Task<byte[]> DownloadBytesAsync(string url, string fileName)
+    {
+        using var response = await _httpClient.GetAsync(url);
+
+        if (!response.IsSuccessStatusCode)
+            throw new HttpRequestException(
+                $"Failed to download '{fileName}'. HTTP {(int)response.StatusCode}",
+                inner: null,
+                statusCode: response.StatusCode);
+
+        return await response.Content.ReadAsByteArrayAsync();
+    }
+
+    private List<string> PrepareImagesFromBytes(byte[] fileBytes, string fileName, int maxImagesPerPdf)
+    {
+        var ext = Path.GetExtension(fileName);
+
+        if (ImageExtensions.Contains(ext))
+            return [Convert.ToBase64String(fileBytes)];
+
+        if (PdfExtensions.Contains(ext))
+        {
+            var all = _pdfConverter.Convert(fileBytes, fileName);
+            return all.Take(Math.Max(0, maxImagesPerPdf)).ToList();
+        }
+
+        throw new NotSupportedException(
+            $"File type '{ext}' is not supported. Allowed: " +
+            string.Join(", ", ImageExtensions.Concat(PdfExtensions)));
     }
 
     // ── Parse LLM response ────────────────────────────────────────────────────
