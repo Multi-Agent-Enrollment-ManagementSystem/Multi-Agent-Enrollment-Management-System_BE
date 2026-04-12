@@ -44,6 +44,15 @@ public sealed class DeleteDocumentCommandHandler : IRequestHandler<DeleteDocumen
         await _unitOfWork.BeginTransactionAsync();
         try
         {
+            var logsReferencingDoc = await _unitOfWork.AgentLogs
+                .FindAsync(l => l.DocumentId == request.DocumentId);
+
+            foreach (var log in logsReferencingDoc)
+            {
+                log.DocumentId = null;
+                await _unitOfWork.AgentLogs.UpdateAsync(log);
+            }
+
             await _unitOfWork.Documents.DeleteAsync(doc);
 
 

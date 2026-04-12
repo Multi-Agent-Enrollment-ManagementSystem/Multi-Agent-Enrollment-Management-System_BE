@@ -135,6 +135,12 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
             }
             else
             {
+                // Always collect existing rejected notes (even if nothing is pending)
+                rejectedNotes.AddRange(documents
+                    .Where(d => string.Equals(d.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase)
+                                && !string.IsNullOrWhiteSpace(d.VerificationDetails))
+                    .Select(d => $"[{d.DocumentType ?? d.FileName}] {d.VerificationDetails}"));
+
                 // Only verify documents that are still pending
                 var pendingDocuments = documents
                     .Where(d => string.Equals(d.VerificationResult, "pending", StringComparison.OrdinalIgnoreCase))
@@ -159,6 +165,7 @@ public sealed class DocumentVerificationAgent : IDocumentVerificationAgent
                     {
                         await VerifySingleDocumentAsync(document, applicantJson, unitOfWork, applicationId);
 
+                        // Add newly rejected notes (avoid duplicates if it was already rejected, but in practice pending→rejected)
                         if (string.Equals(document.VerificationResult, "rejected", StringComparison.OrdinalIgnoreCase)
                             && !string.IsNullOrWhiteSpace(document.VerificationDetails))
                         {
