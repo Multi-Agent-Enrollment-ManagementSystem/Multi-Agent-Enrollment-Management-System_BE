@@ -119,8 +119,9 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            // Build evidence images for score-related certificates so LLM can assess Step 2.
-            // We intentionally keep this narrow to avoid sending too many pages.
+            // Build evidence images from ALL submitted documents so LLM can perform
+            // Step 1 completeness check by visually identifying document types.
+            // Keep a small cap per PDF to avoid sending too many pages.
             var evidenceImages = await BuildEvidenceImagesAsync(documents);
 
             _logger.LogInformation(
@@ -165,7 +166,13 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 notesParts.AddRange(verificationNotes);
             }
 
-            if (!string.IsNullOrWhiteSpace(eligibilityResult.Details))
+            // Only include eligibility evaluation notes when:
+            // - the eligibility evaluation rejected the application, OR
+            // - there are no rejected documents.
+            // This avoids showing positive eligibility notes when the application still needs review due to rejected documents.
+            var shouldIncludeEligibilityNotes = !anyDocRejected || eligibilityRejected;
+
+            if (shouldIncludeEligibilityNotes && !string.IsNullOrWhiteSpace(eligibilityResult.Details))
             {
                 notesParts.Add("[Eligibility Evaluation]");
                 notesParts.Add(eligibilityResult.Details);
@@ -277,30 +284,23 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
 
     private async Task<List<string>> BuildEvidenceImagesAsync(List<Document> documents)
     {
-        // Limit to these document types for scoring evidence.
-        var evidenceTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "schoolrank_certificate",
-            "graduation_certificate",
-            "achievement_certificate",
-            "other"
-        };
-
-        var evidenceDocs = documents
-            .Where(d => !string.IsNullOrWhiteSpace(d.DocumentType)
-                        && evidenceTypes.Contains(d.DocumentType!)
-                        && !string.IsNullOrWhiteSpace(d.FilePath)
+        // Include ALL documents for visual completeness check.
+        // We still require FilePath + FileName so we can download and detect file type.
+        var candidateDocs = documents
+            .Where(d => !string.IsNullOrWhiteSpace(d.FilePath)
                         && !string.IsNullOrWhiteSpace(d.FileName))
             .ToList();
 
         var images = new List<string>();
 
-        foreach (var doc in evidenceDocs)
+        foreach (var doc in candidateDocs)
         {
             try
             {
                 var fileBytes = await DownloadBytesAsync(doc.FilePath!, doc.FileName!);
-                var docImages = PrepareImagesFromBytes(fileBytes, doc.FileName!, maxImagesPerPdf: null);
+
+                // Cap pages per PDF to avoid very large requests.
+                var docImages = PrepareImagesFromBytes(fileBytes, doc.FileName!, maxImagesPerPdf: 3);
                 images.AddRange(docImages);
             }
             catch (Exception ex)

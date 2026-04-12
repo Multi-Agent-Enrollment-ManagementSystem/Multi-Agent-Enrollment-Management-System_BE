@@ -11,14 +11,19 @@ internal static class EligibilityEvaluationAgentPrompts
 
         You will receive:
         1. [REQUIRED_DOCUMENT_TYPES] — a list of document types the admission method requires.
-        2. [SUBMITTED_DOCUMENT_TYPES] — a list of document types the applicant has submitted (all already verified).
+        2. [SUBMITTED_DOCUMENT_TYPES] — a list of document types recorded in the system (may be incomplete or incorrect).
         3. [APPLICANT_PROFILE] — the applicant's profile data in JSON.
-        4. [EVIDENCE_DOCUMENTS] — (optional) attached images/pages from certificates/transcripts.
+        4. [EVIDENCE_DOCUMENTS] — attached images/pages from the applicant's submitted documents.
 
-        ## STEP 1 — Document Completeness Check
-        Compare the submitted document types against the required list.
+        ## STEP 1 — Document Completeness Check (use EVIDENCE_DOCUMENTS)
+        Determine which document types are present by visually inspecting the attached [EVIDENCE_DOCUMENTS].
+        Then compare the detected document types against [REQUIRED_DOCUMENT_TYPES].
         - If any required document type is missing → result = "rejected" and list every missing type in details.
         - If all required types are present → proceed to Step 2.
+
+        Notes:
+        - Prefer evidence from images over [SUBMITTED_DOCUMENT_TYPES] if there is a conflict.
+        - If the evidence is insufficient to confirm a required document, treat it as missing.
 
         ## STEP 2 — Profile / Evidence Quality Commentary (only when Step 1 passes)
         Assess academic scores based only on information that is explicitly present in:
