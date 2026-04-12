@@ -282,7 +282,8 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         {
             "schoolrank_certificate",
             "graduation_certificate",
-            "achievement_certificate"
+            "achievement_certificate",
+            "other"
         };
 
         var evidenceDocs = documents
@@ -292,18 +293,14 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                         && !string.IsNullOrWhiteSpace(d.FileName))
             .ToList();
 
-        // Keep payload bounded.
-        const int maxDocuments = 3;
-        const int maxImagesPerPdf = 2;
-
         var images = new List<string>();
 
-        foreach (var doc in evidenceDocs.Take(maxDocuments))
+        foreach (var doc in evidenceDocs)
         {
             try
             {
                 var fileBytes = await DownloadBytesAsync(doc.FilePath!, doc.FileName!);
-                var docImages = PrepareImagesFromBytes(fileBytes, doc.FileName!, maxImagesPerPdf);
+                var docImages = PrepareImagesFromBytes(fileBytes, doc.FileName!, maxImagesPerPdf: null);
                 images.AddRange(docImages);
             }
             catch (Exception ex)
@@ -330,7 +327,7 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         return await response.Content.ReadAsByteArrayAsync();
     }
 
-    private List<string> PrepareImagesFromBytes(byte[] fileBytes, string fileName, int maxImagesPerPdf)
+    private List<string> PrepareImagesFromBytes(byte[] fileBytes, string fileName, int? maxImagesPerPdf)
     {
         var ext = Path.GetExtension(fileName);
 
@@ -340,7 +337,9 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         if (PdfExtensions.Contains(ext))
         {
             var all = _pdfConverter.Convert(fileBytes, fileName);
-            return all.Take(Math.Max(0, maxImagesPerPdf)).ToList();
+            return maxImagesPerPdf.HasValue
+                ? all.Take(Math.Max(0, maxImagesPerPdf.Value)).ToList()
+                : all;
         }
 
         throw new NotSupportedException(
