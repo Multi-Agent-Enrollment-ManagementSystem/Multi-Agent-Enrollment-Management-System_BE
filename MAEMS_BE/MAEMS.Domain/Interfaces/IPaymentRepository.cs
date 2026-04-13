@@ -27,6 +27,12 @@ public interface IPaymentRepository
     Task<int> CountDistinctPaidApplicationsAsync(CancellationToken cancellationToken = default);
     Task<int> CountNeedCheckingPaymentsAsync(CancellationToken cancellationToken = default);
 
+    // Total revenue (sum Amount) for payments with status = Paid, grouped by quarter of a given year.
+    // Returns items like: (Quarter: 1..4, TotalAmount).
+    Task<IReadOnlyList<(int Quarter, decimal TotalAmount)>> GetPaidRevenueByQuarterAsync(
+        int year,
+        CancellationToken cancellationToken = default);
+
     Task<Payment> AddAsync(Payment entity);
     Task UpdateAsync(Payment entity);
 }

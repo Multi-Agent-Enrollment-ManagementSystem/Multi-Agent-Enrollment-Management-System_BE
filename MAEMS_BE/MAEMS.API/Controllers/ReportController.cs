@@ -3,6 +3,7 @@ using MAEMS.Application.Features.Reports.Queries.GetApplicationsCountByAssignedO
 using MAEMS.Application.Features.Reports.Queries.GetApplicationsCountByCampus;
 using MAEMS.Application.Features.Reports.Queries.GetMyAssignedApplicationsOverview;
 using MAEMS.Application.Features.Reports.Queries.GetNonDraftApplicationsCountByProgramInCampus;
+using MAEMS.Application.Features.Reports.Queries.GetPaidRevenueByQuarter;
 using MAEMS.Application.Features.Reports.Queries.GetReportSummary;
 using MAEMS.Application.Features.Reports.Queries.GetWeeklySubmittedApplicationsCount;
 using MediatR;
@@ -134,6 +135,25 @@ public sealed class ReportController : ControllerBase
         }
 
         var result = await _mediator.Send(new GetMyAssignedApplicationsOverviewQuery(officerUserId), cancellationToken);
+
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Revenue report: total Amount of payments with status = Paid, grouped by quarter of a given year.
+    /// Query params: year (default = current year)
+    /// </summary>
+    [HttpGet("payments/revenue/quarterly")]
+    [Authorize(Roles = "admin")]
+    public async Task<IActionResult> GetPaidRevenueByQuarter(
+        [FromQuery] int? year,
+        CancellationToken cancellationToken)
+    {
+        var targetYear = year ?? DateTime.UtcNow.Year;
+        var result = await _mediator.Send(new GetPaidRevenueByQuarterQuery(targetYear), cancellationToken);
 
         if (!result.Success)
             return BadRequest(result);

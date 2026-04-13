@@ -144,6 +144,30 @@ public class PaymentRepository : IPaymentRepository
             .CountAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<(int Quarter, decimal TotalAmount)>> GetPaidRevenueByQuarterAsync(
+        int year,
+        CancellationToken cancellationToken = default)
+    {
+        // Only Paid payments, paidAt not null, amount not null.
+        // Group by quarter: ((month-1)/3)+1.
+        var rows = await _context.Payments
+            .AsNoTracking()
+            .Where(p => p.PaymentStatus == "Paid"
+                        && p.PaidAt != null
+                        && p.Amount != null
+                        && p.PaidAt.Value.Year == year)
+            .GroupBy(p => ((p.PaidAt!.Value.Month - 1) / 3) + 1)
+            .Select(g => new
+            {
+                Quarter = g.Key,
+                TotalAmount = g.Sum(x => x.Amount ?? 0m)
+            })
+            .OrderBy(x => x.Quarter)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(x => (x.Quarter, x.TotalAmount)).ToList();
+    }
+
     public async Task<DomainPayment> AddAsync(DomainPayment entity)
     {
         var infra = new InfraPayment
