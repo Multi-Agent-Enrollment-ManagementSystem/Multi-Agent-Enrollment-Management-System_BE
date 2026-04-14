@@ -11,24 +11,24 @@ namespace MAEMS.MultiAgent.Agents;
 
 /// <summary>
 /// ChatBox Agent - Xử lý câu hỏi từ thí sinh về quy chế tuyển sinh
-/// Sử dụng Gemini API + RAG để trả lời dựa vào knowledge base, history chat
+/// Sử dụng OpenAI GPT-4 cho chat + Gemini embeddings + RAG
 /// </summary>
 public sealed class ChatBoxAgent : IChatBoxAgent
 {
-    private readonly IGeminiService _geminiService;
+    private readonly IOpenAIService _openAIService;
     private readonly ILlmChatLogRepositoryLegacy _chatLogRepository;
     private readonly postgresContext _dbContext;
     private readonly IRagRetrievalService _ragRetrievalService;
     private readonly ILogger<ChatBoxAgent> _logger;
 
     public ChatBoxAgent(
-        IGeminiService geminiService,
+        IOpenAIService openAIService,
         ILlmChatLogRepositoryLegacy chatLogRepository,
         postgresContext dbContext,
         IRagRetrievalService ragRetrievalService,
         ILogger<ChatBoxAgent> logger)
     {
-        _geminiService = geminiService;
+        _openAIService = openAIService;
         _chatLogRepository = chatLogRepository;
         _dbContext = dbContext;
         _ragRetrievalService = ragRetrievalService;
@@ -69,11 +69,11 @@ public sealed class ChatBoxAgent : IChatBoxAgent
             // 3. Get conversation history (last 5 messages)
             var conversationHistory = await GetConversationHistoryAsync(userId, 5, cancellationToken);
 
-            // 4. Call Gemini API
-            var llmResponse = await _geminiService.GetResponseAsync(
+            // 4. Call OpenAI API (Gemini still used for embeddings in RAG)
+            var llmResponse = await _openAIService.GetChatCompletionAsync(
+                systemPrompt,
                 userQuery,
                 conversationHistory,
-                systemPrompt,
                 cancellationToken);
 
             // 5. Save to database

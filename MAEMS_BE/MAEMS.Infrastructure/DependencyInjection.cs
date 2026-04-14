@@ -52,8 +52,11 @@ public static class DependencyInjection
         // Register File Storage Service (Firebase implementation)
         services.AddSingleton<MAEMS.Application.Interfaces.IFileStorageService, FirebaseStorageService>();
 
-        // Register Gemini Service
+        // Register Gemini Service (for embeddings only - RAG indexing)
         services.AddHttpClient<IGeminiService, GeminiService>();
+
+        // Register OpenAI Service (for chat completions only)
+        services.AddHttpClient<IOpenAIService, OpenAIService>();
 
         // Payment expiration (in-process fire-and-forget)
         services.AddSingleton<IPaymentExpirationService, PaymentExpirationService>();
