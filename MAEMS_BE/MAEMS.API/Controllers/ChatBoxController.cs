@@ -703,7 +703,11 @@ public class ChatBoxController : ControllerBase
 
             var ragDocuments = new List<RagDocument>();
 
-            // Load Programs
+            // Load all configs FIRST (needed for enrichment)
+            var allConfigs = await _unitOfWork.ProgramAdmissionConfigs.GetAllAsync();
+            var configsActive = allConfigs.Where(c => c.IsActive == true).ToList();
+
+            // Load Programs WITH ENRICHED RELATIONAL CONTEXT
             var programs = await _unitOfWork.Programs.GetAllAsync();
             var programsActive = programs.Where(p => p.IsActive == true).ToList();
 
@@ -721,6 +725,27 @@ public class ChatBoxController : ControllerBase
                 if (!string.IsNullOrEmpty(program.EnrollmentYear))
                     content += $"Enrollment Year: {program.EnrollmentYear}\n";
 
+                // ✅ ENRICHMENT: Add campuses offering this program
+                var programConfigs = configsActive
+                    .Where(c => c.ProgramId == program.ProgramId)
+                    .ToList();
+
+                if (programConfigs.Any())
+                {
+                    content += $"\n**Available at campuses:**\n";
+                    foreach (var config in programConfigs)
+                    {
+                        content += $"  - {config.CampusName}";
+                        if (config.Quota.HasValue)
+                            content += $" (Quota: {config.Quota} seats)";
+                        content += $"\n";
+                    }
+
+                    var totalQuota = programConfigs.Sum(c => c.Quota ?? 0);
+                    if (totalQuota > 0)
+                        content += $"\n**Total Quota:** {totalQuota} seats\n";
+                }
+
                 ragDocuments.Add(new RagDocument
                 {
                     Id = $"program-{program.ProgramId}",
@@ -730,13 +755,14 @@ public class ChatBoxController : ControllerBase
                     {
                         { "type", "program" },
                         { "program_id", program.ProgramId.ToString() },
-                        { "program_name", program.ProgramName }
+                        { "program_name", program.ProgramName },
+                        { "campuses_count", programConfigs.Select(c => c.CampusName).Distinct().Count().ToString() }
                     },
                     CreatedAt = program.CreatedAt ?? DateTime.UtcNow
                 });
             }
 
-            // Load Majors
+            // Load Majors WITH ENRICHED RELATIONAL CONTEXT
             var majors = await _unitOfWork.Majors.GetAllAsync();
             var majorsActive = majors.Where(m => m.IsActive == true).ToList();
 
@@ -749,6 +775,31 @@ public class ChatBoxController : ControllerBase
                 if (!string.IsNullOrEmpty(major.Description))
                     content += $"Description: {major.Description}\n";
 
+                // ✅ ENRICHMENT: Add relational context (Programs + Campuses offering this major)
+                var relatedConfigs = configsActive
+                    .Where(c => c.ProgramName != null && c.ProgramName.Contains(major.MajorName, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (relatedConfigs.Any())
+                {
+                    content += $"\n**This major is available at:**\n";
+                    var groupedByCampus = relatedConfigs
+                        .GroupBy(c => c.CampusName)
+                        .OrderBy(g => g.Key);
+
+                    foreach (var campusGroup in groupedByCampus)
+                    {
+                        content += $"\n📍 Campus: {campusGroup.Key}\n";
+                        foreach (var config in campusGroup)
+                        {
+                            content += $"  - Program: {config.ProgramName}";
+                            if (config.Quota.HasValue)
+                                content += $" (Quota: {config.Quota} seats)";
+                            content += $"\n";
+                        }
+                    }
+                }
+
                 ragDocuments.Add(new RagDocument
                 {
                     Id = $"major-{major.MajorId}",
@@ -759,13 +810,14 @@ public class ChatBoxController : ControllerBase
                         { "type", "major" },
                         { "major_id", major.MajorId.ToString() },
                         { "major_name", major.MajorName },
-                        { "major_code", major.MajorCode }
+                        { "major_code", major.MajorCode },
+                        { "campuses_count", relatedConfigs.Select(c => c.CampusName).Distinct().Count().ToString() }
                     },
                     CreatedAt = major.CreatedAt ?? DateTime.UtcNow
                 });
             }
 
-            // Load Campuses
+            // Load Campuses WITH ENRICHED RELATIONAL CONTEXT
             var campuses = await _unitOfWork.Campuses.GetAllAsync();
             var campusesActive = campuses.Where(c => c.IsActive == true).ToList();
 
@@ -783,6 +835,30 @@ public class ChatBoxController : ControllerBase
                 if (!string.IsNullOrEmpty(campus.Email))
                     content += $"Email: {campus.Email}\n";
 
+                // ✅ ENRICHMENT: Add programs and majors available at this campus
+                var programsAtCampus = configsActive
+                    .Where(c => c.CampusName == campus.Name)
+                    .ToList();
+
+                if (programsAtCampus.Any())
+                {
+                    content += $"\n**Programs offered at this campus:**\n";
+                    var groupedByProgram = programsAtCampus
+                        .GroupBy(c => c.ProgramName)
+                        .OrderBy(g => g.Key);
+
+                    foreach (var programGroup in groupedByProgram)
+                    {
+                        content += $"  - {programGroup.Key}";
+
+                        var totalQuota = programGroup.Sum(p => p.Quota ?? 0);
+                        if (totalQuota > 0)
+                            content += $" (Total Quota: {totalQuota} seats)";
+
+                        content += $"\n";
+                    }
+                }
+
                 ragDocuments.Add(new RagDocument
                 {
                     Id = $"campus-{campus.CampusId}",
@@ -793,13 +869,14 @@ public class ChatBoxController : ControllerBase
                         { "type", "campus" },
                         { "campus_id", campus.CampusId.ToString() },
                         { "campus_name", campus.Name },
-                        { "address", campus.Address ?? "" }
+                        { "address", campus.Address ?? "" },
+                        { "programs_count", programsAtCampus.Select(p => p.ProgramName).Distinct().Count().ToString() }
                     },
                     CreatedAt = DateTime.UtcNow
                 });
             }
 
-            // Load Admission Types
+            // Load Admission Types WITH ENRICHED RELATIONAL CONTEXT
             var admissionTypes = await _unitOfWork.AdmissionTypes.GetAllAsync();
             var typesActive = admissionTypes.Where(a => a.IsActive == true).ToList();
 
@@ -814,6 +891,28 @@ public class ChatBoxController : ControllerBase
                 if (!string.IsNullOrEmpty(admissionType.EnrollmentYear))
                     content += $"Enrollment Year: {admissionType.EnrollmentYear}\n";
 
+                // ✅ ENRICHMENT: Add programs using this admission type
+                var programsWithThisType = configsActive
+                    .Where(c => c.AdmissionTypeId == admissionType.AdmissionTypeId)
+                    .ToList();
+
+                if (programsWithThisType.Any())
+                {
+                    content += $"\n**Available for programs:**\n";
+                    var groupedByProgram = programsWithThisType
+                        .GroupBy(c => new { c.ProgramName, c.CampusName })
+                        .OrderBy(g => g.Key.ProgramName);
+
+                    foreach (var programGroup in groupedByProgram)
+                    {
+                        var totalQuota = programGroup.Sum(p => p.Quota ?? 0);
+                        content += $"  - {programGroup.Key.ProgramName} at {programGroup.Key.CampusName}";
+                        if (totalQuota > 0)
+                            content += $" (Quota: {totalQuota} seats)";
+                        content += $"\n";
+                    }
+                }
+
                 ragDocuments.Add(new RagDocument
                 {
                     Id = $"admission-type-{admissionType.AdmissionTypeId}",
@@ -823,16 +922,14 @@ public class ChatBoxController : ControllerBase
                     {
                         { "type", "admission_type" },
                         { "admission_type_id", admissionType.AdmissionTypeId.ToString() },
-                        { "admission_type_name", admissionType.AdmissionTypeName }
+                        { "admission_type_name", admissionType.AdmissionTypeName },
+                        { "programs_count", programsWithThisType.Select(p => p.ProgramName).Distinct().Count().ToString() }
                     },
                     CreatedAt = admissionType.CreatedAt ?? DateTime.UtcNow
                 });
             }
 
-            // Load Program Admission Configs
-            var admissionConfigs = await _unitOfWork.ProgramAdmissionConfigs.GetAllAsync();
-            var configsActive = admissionConfigs.Where(c => c.IsActive == true).ToList();
-
+            // Load Program Admission Configs (already loaded as configsActive above)
             _logger.LogInformation($"Found {configsActive.Count} active program configs");
 
             foreach (var config in configsActive)
