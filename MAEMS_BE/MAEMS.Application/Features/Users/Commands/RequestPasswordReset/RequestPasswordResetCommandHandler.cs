@@ -2,6 +2,7 @@ using MAEMS.Application.Interfaces;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
 using MediatR;
+using System.Security.Cryptography;
 
 namespace MAEMS.Application.Features.Users.Commands.RequestPasswordReset;
 

@@ -54,12 +54,12 @@ internal static class EligibilityEvaluationAgentPrompts
 
         {
           "result": "rejected",
-          "details": "Missing required document types: id_card, high_school_transcript."
+          "details": "Thiếu các loại chứng từ: id_card, high_school_transcript."
         }
 
         Rules:
         - "result" must be exactly "passed" or "rejected"
-        - "details" must always be a non-null string
+        - "details" must always be a non-null string in Vietnamese
         - Return valid JSON only — no markdown, no text outside the JSON
         - Do NOT fabricate scores — only use scores if they are explicitly present in the JSON or clearly readable in the evidence images
         - If no score data is available (or not clearly readable), default to the "not great" message
