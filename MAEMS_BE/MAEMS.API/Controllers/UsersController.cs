@@ -3,6 +3,8 @@ using MAEMS.Application.Features.Users.Commands.LoginUser;
 using MAEMS.Application.Features.Users.Commands.RefreshToken;
 using MAEMS.Application.Features.Users.Commands.RegisterUser;
 using MAEMS.Application.Features.Users.Commands.VerifyEmail;
+using MAEMS.Application.Features.Users.Commands.RequestPasswordReset;
+using MAEMS.Application.Features.Users.Commands.ResetPassword;
 using MAEMS.Application.Features.Users.Queries.GetUserProfile;
 using MAEMS.Application.Features.Users.Queries.GetAllUsers;
 using MAEMS.Application.Features.Users.Commands.CreateUserByAdmin;
@@ -248,6 +250,42 @@ public class UsersController : ControllerBase
         if (!result.Success)
         {
             return NotFound(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Request password reset - sends an email with reset link
+    /// </summary>
+    /// <param name="command">Email address</param>
+    /// <returns>Success message</returns>
+    [HttpPost("request-password-reset")]
+    public async Task<IActionResult> RequestPasswordReset([FromBody] RequestPasswordResetCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Reset password using token from email
+    /// </summary>
+    /// <param name="command">Reset token, new password, and confirm password</param>
+    /// <returns>Success message</returns>
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordCommand command)
+    {
+        var result = await _mediator.Send(command);
+
+        if (!result.Success)
+        {
+            return BadRequest(result);
         }
 
         return Ok(result);
