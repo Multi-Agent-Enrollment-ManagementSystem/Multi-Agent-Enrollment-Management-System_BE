@@ -71,6 +71,32 @@ public class EmailService : IEmailService
         await SendEmailAsync(toEmail, subject, body);
     }
 
+    public async Task SendPasswordResetEmailAsync(string toEmail, string username, string resetToken)
+    {
+        var frontendUrl = _configuration["FrontendUrl"] ?? "https://www.maems.space/";
+        var resetLink = $"{frontendUrl}/reset-password?token={resetToken}";
+
+        var subject = "Reset Your Password - MAEMS";
+        var body = $@"
+            <html>
+            <body>
+                <h2>Password Reset Request</h2>
+                <p>Hello {WebUtility.HtmlEncode(username)},</p>
+                <p>We received a request to reset your password. Click the button below to reset it:</p>
+                <p><a href='{resetLink}' style='background-color: #FF5722; color: white; padding: 14px 20px; text-align: center; text-decoration: none; display: inline-block; border-radius: 4px;'>Reset Password</a></p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p>{resetLink}</p>
+                <p>This link will expire in 1 hour.</p>
+                <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
+                <br/>
+                <p>Best regards,<br/>MAEMS Team</p>
+            </body>
+            </html>
+        ";
+
+        await SendEmailAsync(toEmail, subject, body);
+    }
+
     public async Task SendPaymentReceivedEmailAsync(
         string toEmail,
         string? fullName,
