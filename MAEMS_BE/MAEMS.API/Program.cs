@@ -156,9 +156,6 @@ builder.Services.AddSwaggerGen(c =>
     c.OperationFilter<FileUploadOperationFilter>();
 });
 
-// XÓA DÒNG NÀY vì đã đăng ký trong DependencyInjection.cs:
-// builder.Services.AddTransient<IFileStorageService, FirebaseStorageService>();
-
 var app = builder.Build();
 
 // Configure pipeline

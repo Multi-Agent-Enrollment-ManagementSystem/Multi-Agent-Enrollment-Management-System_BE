@@ -670,6 +670,13 @@ public class ChatBoxController : ControllerBase
                         c.IsActive,
                         c.Quota
                     }),
+                    majors = majorsActive.Take(3).Select(m => new 
+                    { 
+                        m.MajorId, 
+                        m.MajorName, 
+                        m.IsActive,
+                        m.Description
+                    }),
                     campuses = campusesActive.Take(3).Select(c => new 
                     { 
                         c.CampusId, 
@@ -679,7 +686,16 @@ public class ChatBoxController : ControllerBase
                         c.Description
                     })
                 },
-                totalEstimatedDocuments = programsActive.Count + typesActive.Count + configsActive.Count + majorsActive.Count + campusesActive.Count
+                indexBreakdown = new
+                {
+                    programs = programsActive.Count,
+                    majors = majorsActive.Count,
+                    campuses = campusesActive.Count,
+                    admissionTypes = typesActive.Count,
+                    programConfigs = configsActive.Count
+                },
+                totalEstimatedDocuments = programsActive.Count + majorsActive.Count + campusesActive.Count + typesActive.Count + configsActive.Count,
+                note = "Each document type is enriched with relational context from ProgramAdmissionConfig join table"
             });
         }
         catch (Exception ex)
