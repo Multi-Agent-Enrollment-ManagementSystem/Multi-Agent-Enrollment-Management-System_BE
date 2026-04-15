@@ -8,14 +8,14 @@ namespace MAEMS.Application.Features.Users.Commands.ResetPassword;
 public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand, BaseResponse<string>>
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly ITokenService _tokenService;
+    private readonly IOtpService _otpService;
 
     public ResetPasswordCommandHandler(
         IUnitOfWork unitOfWork,
-        ITokenService tokenService)
+        IOtpService otpService)
     {
         _unitOfWork = unitOfWork;
-        _tokenService = tokenService;
+        _otpService = otpService;
     }
 
     public async Task<BaseResponse<string>> Handle(ResetPasswordCommand request, CancellationToken cancellationToken)
@@ -23,11 +23,18 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
         try
         {
             // Validate inputs
-            if (string.IsNullOrWhiteSpace(request.Token))
+            if (string.IsNullOrWhiteSpace(request.Email))
             {
                 return BaseResponse<string>.FailureResponse(
-                    "Invalid token",
-                    new List<string> { "Reset token is required" });
+                    "Email is required",
+                    new List<string> { "Please provide your email address" });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.OtpCode))
+            {
+                return BaseResponse<string>.FailureResponse(
+                    "OTP code is required",
+                    new List<string> { "Please provide the OTP code sent to your email" });
             }
 
             if (string.IsNullOrWhiteSpace(request.NewPassword))
@@ -51,22 +58,14 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
                     new List<string> { "New password and confirm password must match" });
             }
 
-            // Validate token and get user ID
-            var validationResult = await _tokenService.ValidateTokenAsync(request.Token, "PasswordReset");
+            // Validate OTP and get user ID
+            var (isValid, userId) = await _otpService.ValidateOtpAsync(request.Email, request.OtpCode);
 
-            if (!validationResult.IsValid)
+            if (!isValid)
             {
                 return BaseResponse<string>.FailureResponse(
-                    "Invalid or expired token",
-                    new List<string> { "The password reset link is invalid or has expired. Please request a new one." });
-            }
-
-            // Parse user ID from token
-            if (!int.TryParse(validationResult.Identifier, out int userId))
-            {
-                return BaseResponse<string>.FailureResponse(
-                    "Invalid token",
-                    new List<string> { "The reset token is invalid" });
+                    "Invalid or expired OTP",
+                    new List<string> { "The OTP code is invalid or has expired. Please request a new one." });
             }
 
             // Get user
@@ -76,7 +75,15 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
             {
                 return BaseResponse<string>.FailureResponse(
                     "User not found",
-                    new List<string> { "The user associated with this token does not exist" });
+                    new List<string> { "The user associated with this OTP does not exist" });
+            }
+
+            // Verify email matches
+            if (!user.Email.Equals(request.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                return BaseResponse<string>.FailureResponse(
+                    "Invalid request",
+                    new List<string> { "Email does not match the OTP" });
             }
 
             // Check if user is active
@@ -95,8 +102,8 @@ public class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordCommand,
             await _unitOfWork.Users.UpdateAsync(user);
             await _unitOfWork.SaveChangesAsync();
 
-            // Revoke the token so it can't be used again
-            await _tokenService.RevokeTokenAsync(request.Token);
+            // Revoke the OTP so it can't be used again
+            await _otpService.RevokeOtpAsync(request.Email);
 
             return BaseResponse<string>.SuccessResponse(
                 "Password has been reset successfully. You can now login with your new password.",
