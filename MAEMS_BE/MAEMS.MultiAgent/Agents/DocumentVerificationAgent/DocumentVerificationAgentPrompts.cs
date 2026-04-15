@@ -45,13 +45,13 @@ internal static class DocumentVerificationAgentPrompts
 
         {
           "result": "rejected",
-          "details": "Specific reason: e.g. Name on document 'Nguyen Van B' does not match profile 'Nguyen Van A'."
+          "details": "Lý do cụ thể: ví dụ: Tên trên tài liệu 'Nguyen Van B' không khớp với hồ sơ 'Nguyen Van A'."
         }
 
         Rules:
         - "result" must be exactly "verified" or "rejected"
         - "details" must be null when result is "verified"
-        - "details" must be a concise English string describing each mismatch when result is "rejected"
+        - "details" must be a concise Vietnamese string describing each mismatch when result is "rejected"
         - Return valid JSON only — no markdown, no text outside the JSON
         """;
 }

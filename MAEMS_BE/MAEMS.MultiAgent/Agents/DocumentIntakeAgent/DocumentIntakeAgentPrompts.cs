@@ -68,7 +68,7 @@ internal static class DocumentIntakeAgentPrompts
 
         Rules:
         - Return valid JSON only — no markdown, no text outside the JSON
-        - If any quality check fails, set "passed_quality_check" to false and describe each problem in "issues"
+        - If any quality check fails, set "passed_quality_check" to false and describe each problem in "issues" using Vietnamese
         - Never fabricate — only judge what is clearly visible in the document
         """;
 }

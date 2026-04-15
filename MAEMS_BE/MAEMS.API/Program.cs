@@ -108,11 +108,15 @@ builder.Services.AddAuthorization();
 // Add CORS - Allow WebSocket with credentials
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowFE", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.WithOrigins(
+                "https://localhost:5173",   // dev
+                "https://www.maems.space"   // production FE
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials(); 
     });
 });
 
@@ -171,7 +175,7 @@ app.UseSwaggerUI(c =>
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseHttpsRedirection();
-app.UseCors("AllowAll");
+app.UseCors("AllowFE");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHub<NotificationHub>("/api/hubs/notifications");
