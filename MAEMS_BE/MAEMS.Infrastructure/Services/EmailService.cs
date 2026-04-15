@@ -71,25 +71,37 @@ public class EmailService : IEmailService
         await SendEmailAsync(toEmail, subject, body);
     }
 
-    public async Task SendPasswordResetEmailAsync(string toEmail, string username, string resetToken)
+    public async Task SendPasswordResetOtpEmailAsync(string toEmail, string username, string otpCode)
     {
-        var frontendUrl = _configuration["FrontendUrl"] ?? "https://www.maems.space/";
-        var resetLink = $"{frontendUrl}/reset-password?token={resetToken}";
-
         var subject = "Reset Your Password - MAEMS";
         var body = $@"
             <html>
-            <body>
-                <h2>Password Reset Request</h2>
-                <p>Hello {WebUtility.HtmlEncode(username)},</p>
-                <p>We received a request to reset your password. Click the button below to reset it:</p>
-                <p><a href='{resetLink}' style='background-color: #FF5722; color: white; padding: 14px 20px; text-align: center; text-decoration: none; display: inline-block; border-radius: 4px;'>Reset Password</a></p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p>{resetLink}</p>
-                <p>This link will expire in 1 hour.</p>
-                <p>If you did not request a password reset, please ignore this email or contact support if you have concerns.</p>
-                <br/>
-                <p>Best regards,<br/>MAEMS Team</p>
+            <body style='font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #333;'>
+                <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
+                    <h2 style='color: #FF5722;'>Password Reset Request</h2>
+                    <p>Hello <strong>{WebUtility.HtmlEncode(username)}</strong>,</p>
+                    <p>We received a request to reset your password. Use the OTP code below to reset your password:</p>
+
+                    <div style='background-color: #f5f5f5; border: 2px dashed #FF5722; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;'>
+                        <p style='margin: 0; font-size: 14px; color: #666;'>Your OTP Code:</p>
+                        <h1 style='margin: 10px 0; font-size: 42px; letter-spacing: 8px; color: #FF5722; font-weight: bold;'>{otpCode}</h1>
+                        <p style='margin: 0; font-size: 12px; color: #999;'>This code will expire in 10 minutes</p>
+                    </div>
+
+                    <p style='margin-top: 20px;'><strong>Instructions:</strong></p>
+                    <ol>
+                        <li>Go back to the password reset page</li>
+                        <li>Enter this OTP code</li>
+                        <li>Set your new password</li>
+                    </ol>
+
+                    <p style='color: #999; font-size: 14px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;'>
+                        <strong>Security Notice:</strong><br/>
+                        If you did not request a password reset, please ignore this email or contact support if you have concerns.
+                    </p>
+
+                    <p style='margin-top: 20px;'>Best regards,<br/><strong>MAEMS Team</strong></p>
+                </div>
             </body>
             </html>
         ";

@@ -10,16 +10,16 @@ public class RequestPasswordResetCommandHandler : IRequestHandler<RequestPasswor
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEmailService _emailService;
-    private readonly ITokenService _tokenService;
+    private readonly IOtpService _otpService;
 
     public RequestPasswordResetCommandHandler(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
-        ITokenService tokenService)
+        IOtpService otpService)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
-        _tokenService = tokenService;
+        _otpService = otpService;
     }
 
     public async Task<BaseResponse<string>> Handle(RequestPasswordResetCommand request, CancellationToken cancellationToken)
@@ -42,30 +42,30 @@ public class RequestPasswordResetCommandHandler : IRequestHandler<RequestPasswor
             if (user == null)
             {
                 return BaseResponse<string>.SuccessResponse(
-                    "If an account exists with this email, a password reset link has been sent",
-                    "Password reset email sent");
+                    "If an account exists with this email, an OTP code has been sent",
+                    "OTP code sent");
             }
 
             // Check if user is active
             if (user.IsActive == false)
             {
                 return BaseResponse<string>.SuccessResponse(
-                    "If an account exists with this email, a password reset link has been sent",
-                    "Password reset email sent");
+                    "If an account exists with this email, an OTP code has been sent",
+                    "OTP code sent");
             }
 
-            // Generate reset token (expires in 1 hour)
-            var resetToken = await _tokenService.GenerateTokenAsync(
-                user.UserId.ToString(),
-                "PasswordReset",
-                TimeSpan.FromHours(1));
+            // Generate 6-digit OTP code
+            var otpCode = _otpService.GenerateOtp();
 
-            // Send password reset email
-            await _emailService.SendPasswordResetEmailAsync(user.Email, user.Username, resetToken);
+            // Store OTP (expires in 10 minutes)
+            await _otpService.StoreOtpAsync(user.Email, otpCode, user.UserId, TimeSpan.FromMinutes(10));
+
+            // Send OTP via email
+            await _emailService.SendPasswordResetOtpEmailAsync(user.Email, user.Username, otpCode);
 
             return BaseResponse<string>.SuccessResponse(
-                "If an account exists with this email, a password reset link has been sent",
-                "Password reset email sent");
+                "If an account exists with this email, an OTP code has been sent",
+                "OTP code sent");
         }
         catch (Exception ex)
         {

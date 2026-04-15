@@ -46,6 +46,9 @@ public static class DependencyInjection
         // Register Token Service
         services.AddScoped<ITokenService, TokenService>();
 
+        // Register OTP Service
+        services.AddSingleton<IOtpService, OtpService>();
+
         // Register Firebase Auth Service
         services.AddScoped<IFirebaseAuthService, FirebaseAuthService>();
 
