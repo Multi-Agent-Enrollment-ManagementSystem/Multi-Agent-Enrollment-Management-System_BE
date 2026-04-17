@@ -142,11 +142,12 @@ public class ApplicantsController : ControllerBase
     }
 
     /// <summary>
-    /// Get applicant by id
+    /// Get applicant by id (requires JWT authentication with roles = officer, admin, qa)
     /// </summary>
     /// <param name="id">Applicant id</param>
     /// <returns>Applicant profile</returns>
     [HttpGet("{id}")]
+    [Authorize(Roles = "officer,admin,qa")]
     public async Task<IActionResult> GetApplicantById(int id)
     {
         var query = new MAEMS.Application.Features.Applicants.Queries.GetApplicantById.GetApplicantByIdQuery(id);
