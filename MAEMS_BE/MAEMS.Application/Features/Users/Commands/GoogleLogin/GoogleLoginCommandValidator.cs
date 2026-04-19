@@ -8,6 +8,6 @@ public class GoogleLoginCommandValidator : AbstractValidator<GoogleLoginCommand>
     {
         RuleFor(x => x.IdToken)
             .NotEmpty().WithMessage("Google ID Token is required")
-            .MinimumLength(10).WithMessage("Invalid Google ID Token format");
+            .MinimumLength(100).WithMessage("Invalid Google ID Token format");
     }
 }

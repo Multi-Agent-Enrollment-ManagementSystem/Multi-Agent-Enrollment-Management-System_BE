@@ -1,10 +1,10 @@
 using FluentValidation;
 
-namespace MAEMS.Application.Features.Users.Commands.RegisterUser;
+namespace MAEMS.Application.Features.Users.Commands.CreateUserByAdmin;
 
-public class RegisterUserCommandValidator : AbstractValidator<RegisterUserCommand>
+public class CreateUserByAdminCommandValidator : AbstractValidator<CreateUserByAdminCommand>
 {
-    public RegisterUserCommandValidator()
+    public CreateUserByAdminCommandValidator()
     {
         RuleFor(x => x.Username)
             .NotEmpty().WithMessage("Username is required")
@@ -24,5 +24,8 @@ public class RegisterUserCommandValidator : AbstractValidator<RegisterUserComman
             .Matches(@"[A-Z]").WithMessage("Password must contain at least one uppercase letter")
             .Matches(@"[a-z]").WithMessage("Password must contain at least one lowercase letter")
             .Matches(@"[0-9]").WithMessage("Password must contain at least one digit");
+
+        RuleFor(x => x.RoleId)
+            .GreaterThan(0).WithMessage("Role ID must be greater than 0");
     }
 }
