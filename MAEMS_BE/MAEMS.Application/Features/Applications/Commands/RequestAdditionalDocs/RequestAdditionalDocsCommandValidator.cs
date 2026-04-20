@@ -8,7 +8,7 @@ public class RequestAdditionalDocsCommandValidator : AbstractValidator<RequestAd
     {
         RuleFor(x => x.DocsNeed)
             .NotEmpty().WithMessage("Document requirements description is required")
-            .MinimumLength(10).WithMessage("Description must be at least 10 characters")
+            .MinimumLength(5).WithMessage("Description must be at least 5 characters")
             .MaximumLength(500).WithMessage("Description must not exceed 500 characters");
     }
 }

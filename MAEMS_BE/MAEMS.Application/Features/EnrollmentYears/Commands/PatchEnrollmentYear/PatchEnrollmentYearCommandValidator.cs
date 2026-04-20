@@ -4,7 +4,7 @@ namespace MAEMS.Application.Features.EnrollmentYears.Commands.PatchEnrollmentYea
 
 public class PatchEnrollmentYearCommandValidator : AbstractValidator<PatchEnrollmentYearCommand>
 {
-    private readonly string[] _validStatuses = { "upcoming", "ongoing", "completed", "closed" };
+    private readonly string[] _validStatuses = { "upcoming", "active", "completed", "closed" };
 
     public PatchEnrollmentYearCommandValidator()
     {

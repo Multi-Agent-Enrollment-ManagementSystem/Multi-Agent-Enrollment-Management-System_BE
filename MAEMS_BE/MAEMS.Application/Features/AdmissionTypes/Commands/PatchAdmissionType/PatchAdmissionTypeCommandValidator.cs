@@ -4,8 +4,6 @@ namespace MAEMS.Application.Features.AdmissionTypes.Commands.PatchAdmissionType;
 
 public class PatchAdmissionTypeCommandValidator : AbstractValidator<PatchAdmissionTypeCommand>
 {
-    private readonly string[] _validTypes = { "regular", "priority", "special" };
-
     public PatchAdmissionTypeCommandValidator()
     {
         RuleFor(x => x.AdmissionTypeId)
@@ -16,9 +14,8 @@ public class PatchAdmissionTypeCommandValidator : AbstractValidator<PatchAdmissi
             .WithMessage("Name must be between 3 and 200 characters");
 
         RuleFor(x => x.Type)
-            .Must(t => _validTypes.Contains(t?.ToLower()))
-            .When(x => !string.IsNullOrEmpty(x.Type))
-            .WithMessage($"Type must be one of: {string.Join(", ", _validTypes)}");
+            .NotEmpty().WithMessage("Admission type is required")
+            .Length(3, 200).WithMessage("Type must be between 3 and 200 characters");
 
         RuleFor(x => x.RequiredDocumentList)
             .Must(BeValidJson).When(x => !string.IsNullOrEmpty(x.RequiredDocumentList))
