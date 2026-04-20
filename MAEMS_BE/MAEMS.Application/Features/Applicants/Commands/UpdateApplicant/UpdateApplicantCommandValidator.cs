@@ -21,8 +21,8 @@ public class UpdateApplicantCommandValidator : AbstractValidator<UpdateApplicant
             .WithMessage("Date of birth must be in the past");
 
         RuleFor(x => x.Gender)
-            .Must(x => x == null || new[] { "Male", "Female", "Other" }.Contains(x))
-            .WithMessage("Gender must be Male, Female, or Other");
+            .Must(x => x == null || new[] { "Nam", "Nữ", "Khác" }.Contains(x))
+            .WithMessage("Gender must be Nam, Nữ, or Khác");
 
         RuleFor(x => x.ContactEmail)
             .EmailAddress().When(x => !string.IsNullOrEmpty(x.ContactEmail))
