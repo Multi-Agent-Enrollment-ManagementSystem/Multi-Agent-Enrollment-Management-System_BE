@@ -26,6 +26,9 @@ public class EligibilityEvaluationResult
     /// <summary>"passed" hoặc "rejected"</summary>
     public string Result { get; set; } = "rejected";
 
+    /// <summary>Level ưu tiên nếu passed (VD: Normal, Good, Great, Excellent)</summary>
+    public string? Level { get; set; }
+
     /// <summary>Nhận xét / lý do từ LLM.</summary>
     public string? Details { get; set; }
 }

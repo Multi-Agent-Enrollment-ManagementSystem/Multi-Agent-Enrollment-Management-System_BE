@@ -12,6 +12,9 @@ internal sealed class LlmEligibilityResponse
     [JsonPropertyName("result")]
     public string Result { get; init; } = "rejected";
 
+    [JsonPropertyName("level")]
+    public string? Level { get; init; }
+
     [JsonPropertyName("details")]
     public string? Details { get; init; }
 }

@@ -111,8 +111,9 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFE", policy =>
     {
         policy.WithOrigins(
-                "https://localhost:5173",   // dev
-                "https://www.maems.space"   // production FE
+                "https://localhost:5173",
+                "http://localhost:5173",
+                "https://www.maems.space" // production FE
             )
             .AllowAnyMethod()
             .AllowAnyHeader()

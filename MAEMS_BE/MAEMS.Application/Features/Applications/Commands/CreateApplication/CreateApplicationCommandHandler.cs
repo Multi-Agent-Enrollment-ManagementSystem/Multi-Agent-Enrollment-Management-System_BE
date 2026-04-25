@@ -50,12 +50,12 @@ public class CreateApplicationCommandHandler : IRequestHandler<CreateApplication
 
             // Kiểm tra applicant đã có application cho config này chưa
             var existingApplications = await _unitOfWork.Applications.GetAllByApplicantIdAsync(request.ApplicantId);
-            var duplicate = existingApplications.FirstOrDefault(a => a.ProgramId == config.ProgramId);
+            var duplicate = existingApplications.FirstOrDefault(a => a.ConfigId == request.ConfigId);
             if (duplicate != null)
             {
                 return BaseResponse<ApplicationDto>.FailureResponse(
                     "Application already exists",
-                    new List<string> { "This applicant already has an application for this program" }
+                    new List<string> { "This applicant already has an application for this admission configuration" }
                 );
             }
 

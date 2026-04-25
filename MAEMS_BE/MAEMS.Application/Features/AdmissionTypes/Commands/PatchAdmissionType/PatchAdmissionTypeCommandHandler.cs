@@ -62,6 +62,12 @@ public class PatchAdmissionTypeCommandHandler : IRequestHandler<PatchAdmissionTy
             if (request.RequiredDocumentList != null)
                 entity.RequiredDocumentList = request.RequiredDocumentList;
 
+            if (request.EligibilityRules != null)
+                entity.EligibilityRules = request.EligibilityRules;
+
+            if (request.PriorityRules != null)
+                entity.PriorityRules = request.PriorityRules;
+
             if (request.IsActive.HasValue)
                 entity.IsActive = request.IsActive;
 

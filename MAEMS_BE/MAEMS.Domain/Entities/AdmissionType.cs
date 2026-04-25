@@ -7,6 +7,11 @@ public class AdmissionType
     public int? EnrollmentYearId { get; set; }
     public string Type { get; set; } = string.Empty;
     public string? RequiredDocumentList { get; set; }
+
+    public string? EligibilityRules { get; set; }
+
+    public string? PriorityRules { get; set; }
+
     public bool? IsActive { get; set; }
     public DateTime? CreatedAt { get; set; }
     

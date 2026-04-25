@@ -64,6 +64,8 @@ public class CreateAdmissionTypeCommandHandler : IRequestHandler<CreateAdmission
                 EnrollmentYearId = request.EnrollmentYearId,
                 Type = type,
                 RequiredDocumentList = request.RequiredDocumentList,
+                EligibilityRules = request.EligibilityRules,
+                PriorityRules = request.PriorityRules,
                 IsActive = request.IsActive ?? true,
                 CreatedAt = DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified)
             };

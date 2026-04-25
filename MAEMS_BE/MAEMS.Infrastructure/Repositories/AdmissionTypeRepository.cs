@@ -70,6 +70,8 @@ public class AdmissionTypeRepository : BaseRepository, IAdmissionTypeRepository
             EnrollmentYearId = entity.EnrollmentYearId,
             Type = entity.Type,
             RequiredDocumentList = entity.RequiredDocumentList,
+            EligibilityRules = entity.EligibilityRules,
+            PriorityRules = entity.PriorityRules,
             IsActive = entity.IsActive,
             CreatedAt = entity.CreatedAt
         };
@@ -89,6 +91,8 @@ public class AdmissionTypeRepository : BaseRepository, IAdmissionTypeRepository
             infraAdmissionType.EnrollmentYearId = entity.EnrollmentYearId;
             infraAdmissionType.Type = entity.Type;
             infraAdmissionType.RequiredDocumentList = entity.RequiredDocumentList;
+            infraAdmissionType.EligibilityRules = entity.EligibilityRules;
+            infraAdmissionType.PriorityRules = entity.PriorityRules;
             infraAdmissionType.IsActive = entity.IsActive;
 
             _context.AdmissionTypes.Update(infraAdmissionType);
@@ -124,6 +128,8 @@ public class AdmissionTypeRepository : BaseRepository, IAdmissionTypeRepository
             EnrollmentYearId = infraAdmissionType.EnrollmentYearId,
             Type = infraAdmissionType.Type ?? string.Empty,
             RequiredDocumentList = infraAdmissionType.RequiredDocumentList,
+            EligibilityRules = infraAdmissionType.EligibilityRules,
+            PriorityRules = infraAdmissionType.PriorityRules,
             IsActive = infraAdmissionType.IsActive,
             CreatedAt = infraAdmissionType.CreatedAt,
             EnrollmentYear = infraAdmissionType.EnrollmentYear?.Year

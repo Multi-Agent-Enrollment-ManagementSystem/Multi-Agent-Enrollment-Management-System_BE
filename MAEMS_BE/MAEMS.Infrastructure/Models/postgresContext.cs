@@ -87,6 +87,12 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.RequiredDocumentList)
                 .HasColumnType("jsonb")
                 .HasColumnName("required_document_list");
+            entity.Property(e => e.EligibilityRules)
+                .HasColumnType("jsonb")
+                .HasColumnName("eligibility_rules");
+            entity.Property(e => e.PriorityRules)
+                .HasColumnType("jsonb")
+                .HasColumnName("priority_rules");
             entity.Property(e => e.Type)
                 .HasMaxLength(50)
                 .HasColumnName("type");

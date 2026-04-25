@@ -102,6 +102,9 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 ? BuildApplicantJson(applicant)
                 : "{}";
 
+            var eligibilityRules = admissionType?.EligibilityRules;
+            var priorityRules = admissionType?.PriorityRules;
+
             // ── Load submitted & verified document types ──────────────────
             // Documents are associated with ApplicantId, not ApplicationId
             if (!application.ApplicantId.HasValue)
@@ -132,7 +135,14 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
                 applicationId);
 
             // ── Call LLM ──────────────────────────────────────────────────
-            var responseBody = await CallOllamaAsync(requiredDocTypes, submittedDocTypes, applicantJson, evidenceImages, applicationId);
+            var responseBody = await CallOllamaAsync(
+                requiredDocTypes,
+                submittedDocTypes,
+                applicantJson,
+                evidenceImages,
+                applicationId,
+                eligibilityRules,
+                priorityRules);
 
             // Save raw LLM response to AgentLog (application-level)
             await unitOfWork.AgentLogs.AddAsync(new AgentLog
@@ -172,10 +182,17 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             // This avoids showing positive eligibility notes when the application still needs review due to rejected documents.
             var shouldIncludeEligibilityNotes = !anyDocRejected || eligibilityRejected;
 
-            if (shouldIncludeEligibilityNotes && !string.IsNullOrWhiteSpace(eligibilityResult.Details))
+            if (shouldIncludeEligibilityNotes)
             {
-                notesParts.Add("[Eligibility Evaluation]");
-                notesParts.Add(eligibilityResult.Details);
+                if (!string.IsNullOrWhiteSpace(eligibilityResult.Level))
+                {
+                    notesParts.Add($"[Level]: {eligibilityResult.Level}");
+                }
+                if (!string.IsNullOrWhiteSpace(eligibilityResult.Details))
+                {
+                    notesParts.Add("[Eligibility Evaluation]");
+                    notesParts.Add(eligibilityResult.Details);
+                }
             }
 
             var notes = notesParts.Count > 0
@@ -228,9 +245,20 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
         List<string> submittedDocTypes,
         string applicantJson,
         List<string> evidenceImagesBase64,
-        int applicationId)
+        int applicationId,
+        string? eligibilityRules = null,
+        string? priorityRules = null)
     {
+        var rulesSection = "";
+        if (!string.IsNullOrWhiteSpace(eligibilityRules) || !string.IsNullOrWhiteSpace(priorityRules))
+        {
+            rulesSection = "[RULES]\n";
+            if (!string.IsNullOrWhiteSpace(eligibilityRules)) rulesSection += $"Eligibility Rules:\n{eligibilityRules}\n\n";
+            if (!string.IsNullOrWhiteSpace(priorityRules)) rulesSection += $"Priority Rules:\n{priorityRules}\n\n";
+        }
+
         var userPrompt =
+            $"{rulesSection}" +
             $"[REQUIRED_DOCUMENT_TYPES]\n{string.Join(", ", requiredDocTypes.DefaultIfEmpty("(none specified)"))}\n\n" +
             $"[SUBMITTED_DOCUMENT_TYPES]\n{string.Join(", ", submittedDocTypes.DefaultIfEmpty("(none)"))}\n\n" +
             $"[APPLICANT_PROFILE]\n{applicantJson}\n\n" +
@@ -374,6 +402,7 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             return new EligibilityEvaluationResult
             {
                 Result  = result,
+                Level   = llmResult.Level,
                 Details = llmResult.Details
             };
         }

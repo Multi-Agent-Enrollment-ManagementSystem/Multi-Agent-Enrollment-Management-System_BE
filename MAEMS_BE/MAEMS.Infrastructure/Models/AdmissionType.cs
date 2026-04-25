@@ -16,7 +16,8 @@ public partial class AdmissionType
     public string Type { get; set; }
 
     public string RequiredDocumentList { get; set; }
-
+    public string? EligibilityRules { get; set; }
+    public string? PriorityRules { get; set; }
     public bool? IsActive { get; set; }
 
     public DateTime? CreatedAt { get; set; }
