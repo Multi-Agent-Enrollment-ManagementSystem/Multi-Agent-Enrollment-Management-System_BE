@@ -26,6 +26,7 @@ public class UnitOfWork : IUnitOfWork
     public IDocumentRepository Documents => new DocumentRepository(_context); // Added
     public IProgramAdmissionConfigRepository ProgramAdmissionConfigs => new ProgramAdmissionConfigRepository(_context);
     public IEnrollmentYearRepository EnrollmentYears => new EnrollmentYearRepository(_context);
+    public IFeedbackRepository Feedbacks => new FeedbackRepository(_context);
     public IAgentLogRepository AgentLogs => new AgentLogRepository(_context);
     public ILlmChatLogRepository LlmChatLogs => new LlmChatLogRepository(_context);
     public IArticleRepository Articles => new ArticleRepository(_context);

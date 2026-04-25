@@ -13,6 +13,7 @@ public interface IUnitOfWork : IDisposable
     IDocumentRepository Documents { get; }
     IProgramAdmissionConfigRepository ProgramAdmissionConfigs { get; }
     IEnrollmentYearRepository EnrollmentYears { get; }
+    IFeedbackRepository Feedbacks { get; }
 
     IAgentLogRepository AgentLogs { get; }
     ILlmChatLogRepository LlmChatLogs { get; }

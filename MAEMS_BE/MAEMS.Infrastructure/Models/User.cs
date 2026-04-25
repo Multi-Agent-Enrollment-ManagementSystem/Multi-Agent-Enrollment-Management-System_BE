@@ -27,6 +27,8 @@ public partial class User
 
     public virtual ICollection<Article> Articles { get; set; } = new List<Article>();
 
+    public virtual ICollection<Feedback> Feedbacks { get; set; } = new List<Feedback>();
+
     public virtual ICollection<LlmChatLog> LlmChatLogs { get; set; } = new List<LlmChatLog>();
 
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();

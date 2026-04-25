@@ -29,6 +29,8 @@ public partial class postgresContext : DbContext
 
     public virtual DbSet<EnrollmentYear> EnrollmentYears { get; set; }
 
+    public virtual DbSet<Feedback> Feedbacks { get; set; }
+
     public virtual DbSet<LlmChatLog> LlmChatLogs { get; set; }
 
     public virtual DbSet<Major> Majors { get; set; }
@@ -339,6 +341,23 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.Year)
                 .HasMaxLength(20)
                 .HasColumnName("year");
+        });
+
+        modelBuilder.Entity<Feedback>(entity =>
+        {
+            entity.ToTable("feedback");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id").UseIdentityAlwaysColumn();
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.Title).IsRequired().HasColumnName("title").HasMaxLength(255);
+            entity.Property(e => e.Content).IsRequired().HasColumnName("content");
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+            entity.HasOne(d => d.User)
+                .WithMany(p => p.Feedbacks)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_feedback_user");
         });
 
         modelBuilder.Entity<LlmChatLog>(entity =>
