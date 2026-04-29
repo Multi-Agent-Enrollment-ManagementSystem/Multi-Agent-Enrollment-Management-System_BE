@@ -202,6 +202,7 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             // ── Persist to Application ────────────────────────────────────
             application.RequiresReview = requiresReview;
             application.Notes         = notes;
+            application.Level         = eligibilityResult.Level;
             application.LastUpdated   = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
 
             await unitOfWork.Applications.UpdateAsync(application);

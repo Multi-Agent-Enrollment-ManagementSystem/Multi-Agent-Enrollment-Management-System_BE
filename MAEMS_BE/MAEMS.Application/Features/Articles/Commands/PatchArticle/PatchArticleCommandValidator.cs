@@ -4,7 +4,7 @@ namespace MAEMS.Application.Features.Articles.Commands.PatchArticle;
 
 public class PatchArticleCommandValidator : AbstractValidator<PatchArticleCommand>
 {
-    private readonly string[] _validStatuses = { "draft", "published", "archived" };
+    private readonly string[] _validStatuses = { "draft", "publish", "archived" };
 
     public PatchArticleCommandValidator()
     {

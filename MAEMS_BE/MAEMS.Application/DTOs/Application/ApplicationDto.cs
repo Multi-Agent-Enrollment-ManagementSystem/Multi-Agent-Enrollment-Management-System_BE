@@ -19,4 +19,5 @@ public class ApplicationDto
     public int? AssignedOfficerId { get; set; }
     public string? AssignedOfficerName { get; set; }
     public bool? RequiresReview { get; set; }
+    public string? Level { get; set; }
 }

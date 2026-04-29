@@ -8,6 +8,7 @@ public class Article
     public string? Thumbnail { get; set; }
     public int? AuthorId { get; set; }
     public string? Status { get; set; }
+    public bool? IsRegisterable { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

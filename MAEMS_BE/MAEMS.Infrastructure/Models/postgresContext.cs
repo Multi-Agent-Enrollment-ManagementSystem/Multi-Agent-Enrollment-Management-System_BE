@@ -43,6 +43,8 @@ public partial class postgresContext : DbContext
 
     public virtual DbSet<ProgramAdmissionConfig> ProgramAdmissionConfigs { get; set; }
 
+    public virtual DbSet<RegisterEvent> RegisterEvents { get; set; }
+
     public virtual DbSet<Role> Roles { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
@@ -221,6 +223,9 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.SubmittedAt)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("submitted_at");
+            entity.Property(e => e.Level)
+                .HasMaxLength(255)
+                .HasColumnName("level");
 
             entity.HasOne(d => d.Applicant).WithMany(p => p.Applications)
                 .HasForeignKey(d => d.ApplicantId)
@@ -259,6 +264,10 @@ public partial class postgresContext : DbContext
             entity.Property(e => e.UpdatedAt)
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("updated_at");
+            
+            entity.Property(e => e.IsRegisterable)
+                .HasColumnName("is_registerable")
+                .HasDefaultValue(false);
 
             entity.HasOne(d => d.Author).WithMany(p => p.Articles)
                 .HasForeignKey(d => d.AuthorId)
@@ -532,6 +541,31 @@ public partial class postgresContext : DbContext
             entity.HasOne(d => d.Program).WithMany(p => p.ProgramAdmissionConfigs)
                 .HasForeignKey(d => d.ProgramId)
                 .HasConstraintName("pac_program_id_fkey");
+        });
+
+        modelBuilder.Entity<RegisterEvent>(entity =>
+        {
+            entity.HasKey(e => e.RegisterId).HasName("register_event_pkey");
+
+            entity.ToTable("register_event");
+
+            entity.Property(e => e.RegisterId).HasColumnName("register_id");
+            entity.Property(e => e.ArticleId).HasColumnName("article_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Email)
+                .HasColumnName("email");
+            entity.Property(e => e.FullName)
+                .HasColumnName("full_name");
+            entity.Property(e => e.Phone)
+                .HasColumnName("phone");
+
+            entity.HasOne(d => d.Article).WithMany(p => p.RegisterEvents)
+                .HasForeignKey(d => d.ArticleId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_register_event_article");
         });
 
         modelBuilder.Entity<Role>(entity =>

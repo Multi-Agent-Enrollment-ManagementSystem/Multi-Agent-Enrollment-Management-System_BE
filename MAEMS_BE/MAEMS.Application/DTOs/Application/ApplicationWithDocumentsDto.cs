@@ -21,5 +21,6 @@ public class ApplicationWithDocumentsDto
     public string? AssignedOfficerName { get; set; }
     public bool? RequiresReview { get; set; }
     public string? Notes { get; set; }
+    public string? Level { get; set; }
     public List<DocumentDto> Documents { get; set; } = new();
 }

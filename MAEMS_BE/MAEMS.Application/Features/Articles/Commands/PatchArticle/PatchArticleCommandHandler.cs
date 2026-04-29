@@ -67,6 +67,12 @@ public class PatchArticleCommandHandler : IRequestHandler<PatchArticleCommand, B
                 changed = true;
             }
 
+            if (request.IsRegisterable != null)
+            {
+                article.IsRegisterable = request.IsRegisterable;
+                changed = true;
+            }
+
             if (!changed)
             {
                 var dtoNoChange = _mapper.Map<ArticleDto>(article);

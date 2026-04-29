@@ -18,10 +18,14 @@ public partial class Article
     public int? AuthorId { get; set; }
 
     public string Status { get; set; }
+    
+    public bool? IsRegisterable { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
 
     public virtual User Author { get; set; }
+
+    public virtual ICollection<RegisterEvent> RegisterEvents { get; set; } = new List<RegisterEvent>();
 }

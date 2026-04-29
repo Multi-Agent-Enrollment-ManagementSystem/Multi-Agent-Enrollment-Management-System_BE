@@ -35,6 +35,7 @@ public class CreateArticleCommandHandler : IRequestHandler<CreateArticleCommand,
             Thumbnail = request.Thumbnail,
             AuthorId = request.AuthorId,
             Status = string.IsNullOrWhiteSpace(request.Status) ? "draft" : request.Status.Trim(),
+            IsRegisterable = request.IsRegisterable ?? false,
             CreatedAt = now,
             UpdatedAt = now
         };

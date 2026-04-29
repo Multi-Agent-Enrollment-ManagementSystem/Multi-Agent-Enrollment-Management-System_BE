@@ -14,6 +14,7 @@ public class FullApplicationDto
     public int? AssignedOfficerId { get; set; }
     public string? Notes { get; set; }
     public bool? RequiresReview { get; set; }
+    public string? Level { get; set; }
     public string? ApplicantName { get; set; }
     public string? ProgramName { get; set; }
     public string? CampusName { get; set; }

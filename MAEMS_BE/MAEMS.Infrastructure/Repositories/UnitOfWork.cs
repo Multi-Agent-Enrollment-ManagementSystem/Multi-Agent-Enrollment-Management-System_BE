@@ -32,6 +32,7 @@ public class UnitOfWork : IUnitOfWork
     public IArticleRepository Articles => new ArticleRepository(_context);
     public INotificationRepository Notifications => new NotificationRepository(_context);
     public IPaymentRepository Payments => new PaymentRepository(_context);
+    public IRegisterEventRepository RegisterEvents => new RegisterEventRepository(_context);
 
     public async Task<int> SaveChangesAsync()
     {

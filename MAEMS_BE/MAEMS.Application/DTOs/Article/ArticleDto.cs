@@ -8,6 +8,7 @@ public class ArticleDto
     public string? Thumbnail { get; set; }
     public string? Authorname { get; set; }
     public string? Status { get; set; }
+    public bool? IsRegisterable { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }

@@ -5,7 +5,7 @@ public class Application
     public int ApplicationId { get; set; }
     public int? ApplicantId { get; set; }
     public int? ConfigId { get; set; }
-    public int? ProgramId { get; set; }
+
     public int? CampusId { get; set; }
     public int? AdmissionTypeId { get; set; }
     public string? Status { get; set; }
@@ -14,8 +14,11 @@ public class Application
     public int? AssignedOfficerId { get; set; }
     public string? Notes { get; set; }
     public bool? RequiresReview { get; set; }
+    public string? Level { get; set; }
 
-    // Navigation properties for DTOs
+    // Navigation properties for convenience (not mapped directly to DB columns structure, 
+    // but useful in Domain logic if needed)
+    public int? ProgramId { get; set; }
     public string? ApplicantName { get; set; }
     public string? ProgramName { get; set; }
     public string? CampusName { get; set; }

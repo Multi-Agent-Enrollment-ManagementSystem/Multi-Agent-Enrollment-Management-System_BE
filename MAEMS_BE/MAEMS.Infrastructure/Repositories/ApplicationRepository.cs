@@ -209,6 +209,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
             infraApplication.AssignedOfficerId = entity.AssignedOfficerId;
             infraApplication.Notes = entity.Notes;
             infraApplication.RequiresReview = entity.RequiresReview;
+            infraApplication.Level = entity.Level;
 
             _context.Applications.Update(infraApplication);
         }
@@ -245,6 +246,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
             AssignedOfficerId = infraApplication.AssignedOfficerId,
             Notes = infraApplication.Notes,
             RequiresReview = infraApplication.RequiresReview,
+            Level = infraApplication.Level,
             // Navigation properties
             ApplicantName = infraApplication.Applicant?.FullName,
             ProgramName = infraApplication.Config?.Program?.ProgramName,

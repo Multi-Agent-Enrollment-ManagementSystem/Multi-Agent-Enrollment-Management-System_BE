@@ -39,6 +39,7 @@ public class ArticleRepository : BaseRepository, IArticleRepository
             Thumbnail = entity.Thumbnail,
             AuthorId = entity.AuthorId,
             Status = entity.Status,
+            IsRegisterable = entity.IsRegisterable,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt
         };
@@ -58,6 +59,7 @@ public class ArticleRepository : BaseRepository, IArticleRepository
         infra.Thumbnail = entity.Thumbnail;
         infra.AuthorId = entity.AuthorId;
         infra.Status = entity.Status;
+        infra.IsRegisterable = entity.IsRegisterable;
         infra.UpdatedAt = entity.UpdatedAt;
 
         _context.Articles.Update(infra);
@@ -200,6 +202,7 @@ public class ArticleRepository : BaseRepository, IArticleRepository
             Thumbnail = infra.Thumbnail,
             AuthorId = infra.AuthorId,
             Status = infra.Status,
+            IsRegisterable = infra.IsRegisterable,
             CreatedAt = infra.CreatedAt,
             UpdatedAt = infra.UpdatedAt
         };

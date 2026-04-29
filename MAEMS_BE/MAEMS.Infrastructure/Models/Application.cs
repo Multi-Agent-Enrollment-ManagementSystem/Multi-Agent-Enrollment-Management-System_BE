@@ -19,11 +19,13 @@ public partial class Application
 
     public int? AssignedOfficerId { get; set; }
 
+    public int? ConfigId { get; set; }
+
     public string Notes { get; set; }
 
     public bool? RequiresReview { get; set; }
-
-    public int? ConfigId { get; set; }
+    
+    public string Level { get; set; }
 
     public virtual ICollection<AgentLog> AgentLogs { get; set; } = new List<AgentLog>();
 

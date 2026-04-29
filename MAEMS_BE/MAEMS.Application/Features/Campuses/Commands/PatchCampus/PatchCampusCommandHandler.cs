@@ -56,6 +56,12 @@ public class PatchCampusCommandHandler : IRequestHandler<PatchCampusCommand, Bas
             if (request.Address != null)
                 campus.Address = request.Address;
 
+            if (request.Email != null)
+                campus.Email = request.Email;
+
+            if (request.PhoneNumber != null)
+                campus.PhoneNumber = request.PhoneNumber;
+
             if (request.Description != null)
                 campus.Description = request.Description;
 

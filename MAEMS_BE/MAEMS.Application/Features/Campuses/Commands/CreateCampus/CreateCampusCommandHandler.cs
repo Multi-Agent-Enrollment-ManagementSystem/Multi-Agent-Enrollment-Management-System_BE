@@ -46,6 +46,8 @@ public class CreateCampusCommandHandler : IRequestHandler<CreateCampusCommand, B
             {
                 Name = name,
                 Address = request.Address,
+                Email = request.Email,
+                PhoneNumber = request.PhoneNumber,
                 Description = request.Description,
                 IsActive = request.IsActive ?? true
             };

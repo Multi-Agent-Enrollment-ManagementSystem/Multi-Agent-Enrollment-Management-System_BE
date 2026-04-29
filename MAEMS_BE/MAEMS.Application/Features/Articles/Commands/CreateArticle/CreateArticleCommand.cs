@@ -13,4 +13,5 @@ public class CreateArticleCommand : IRequest<BaseResponse<ArticleDto>>
     public string Content { get; set; } = string.Empty;
     public string? Thumbnail { get; set; }
     public string? Status { get; set; }
+    public bool? IsRegisterable { get; set; }
 }

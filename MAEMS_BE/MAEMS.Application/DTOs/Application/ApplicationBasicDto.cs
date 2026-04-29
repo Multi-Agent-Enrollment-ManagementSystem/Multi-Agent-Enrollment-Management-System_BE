@@ -10,4 +10,5 @@ public class ApplicationBasicDto
     public string? Status { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public bool? RequiresReview { get; set; }
+    public string? Level { get; set; }
 }

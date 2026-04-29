@@ -241,7 +241,7 @@ public class ApplicationsController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "officer,admin,applicant")]
+    [Authorize(Roles = "officer,qa,applicant")]
     public async Task<IActionResult> GetApplicationWithDocuments(int id)
     {
         var role = User.FindFirst(ClaimTypes.Role)?.Value;
