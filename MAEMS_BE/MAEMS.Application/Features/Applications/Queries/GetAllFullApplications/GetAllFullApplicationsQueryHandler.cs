@@ -1,6 +1,7 @@
 using AutoMapper;
 using MAEMS.Application.DTOs.Application;
 using MAEMS.Application.DTOs.Common;
+using MAEMS.Application.Features.Applications.Queries.GetAllFullApplications;
 using MAEMS.Domain.Common;
 using MAEMS.Domain.Interfaces;
 using MediatR;
@@ -29,6 +30,7 @@ public class GetAllFullApplicationsQueryHandler : IRequestHandler<GetAllFullAppl
                 request.Status,
                 request.RequiresReview,
                 request.AssignedOfficerId,
+                request.Level,
                 request.Search,
                 request.SortBy,
                 request.SortDesc,

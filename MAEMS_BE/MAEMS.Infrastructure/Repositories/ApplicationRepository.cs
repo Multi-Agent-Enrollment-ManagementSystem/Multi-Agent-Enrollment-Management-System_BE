@@ -264,6 +264,7 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
         string? status,
         bool? requiresReview,
         int? assignedOfficerId,
+        string? level,
         string? search,
         string? sortBy,
         bool sortDesc,
@@ -305,6 +306,9 @@ public class ApplicationRepository : BaseRepository, IApplicationRepository
 
         if (assignedOfficerId.HasValue)
             query = query.Where(a => a.AssignedOfficerId == assignedOfficerId.Value);
+        
+        if (!string.IsNullOrWhiteSpace(level))
+            query = query.Where(a => a.Level == level);
 
         if (!string.IsNullOrWhiteSpace(search))
         {

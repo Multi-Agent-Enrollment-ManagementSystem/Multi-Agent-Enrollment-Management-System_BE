@@ -12,6 +12,7 @@ public record GetAllFullApplicationsQuery(
     string? Status = null,
     bool? RequiresReview = null,
     int? AssignedOfficerId = null,
+    string? Level = null,
     string? Search = null,
     string? SortBy = null,
     bool SortDesc = false,

@@ -17,6 +17,7 @@ public interface IApplicationRepository : IGenericRepository<Entities.Applicatio
         string? status,
         bool? requiresReview,
         int? assignedOfficerId,
+        string? level,
         string? search,
         string? sortBy,
         bool sortDesc,
