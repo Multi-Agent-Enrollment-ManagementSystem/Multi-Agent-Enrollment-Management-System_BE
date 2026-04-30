@@ -4,7 +4,7 @@ namespace MAEMS.Application.Features.Articles.Commands.CreateArticle;
 
 public class CreateArticleCommandValidator : AbstractValidator<CreateArticleCommand>
 {
-    private readonly string[] _validStatuses = { "draft", "published", "archived" };
+    private readonly string[] _validStatuses = { "draft", "publish", "archived" };
 
     public CreateArticleCommandValidator()
     {

@@ -15,9 +15,9 @@ public class CreateProgramCommandValidator : AbstractValidator<CreateProgramComm
             .WithMessage("Major ID must be greater than 0 if provided");
 
         RuleFor(x => x.Duration)
-            .NotEmpty().WithMessage("Duration is required")
-            .Matches(@"^\d+\s+(year|years|semester|semesters)$")
-            .WithMessage("Duration must be in format: '4 years', '8 semesters', etc.");
+            .Matches(@"^\d+\s+(năm|học kỳ|năm \(.*\))$")
+            .When(x => !string.IsNullOrEmpty(x.Duration))
+            .WithMessage("Duration must be in format: '4 năm', '8 học kỳ', '3 năm (9 học kỳ)', etc.");
 
         RuleFor(x => x.Description)
             .NotEmpty().WithMessage("Description is required")

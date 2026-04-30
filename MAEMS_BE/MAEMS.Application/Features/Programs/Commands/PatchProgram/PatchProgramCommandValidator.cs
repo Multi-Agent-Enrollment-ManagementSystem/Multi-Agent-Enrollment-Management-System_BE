@@ -14,9 +14,9 @@ public class PatchProgramCommandValidator : AbstractValidator<PatchProgramComman
             .WithMessage("Name must be between 3 and 200 characters");
 
         RuleFor(x => x.Duration)
-            .Matches(@"^\d+\s+(year|years|semester|semesters)$")
+            .Matches(@"^\d+\s+(năm|học kỳ|năm \(.*\))$")
             .When(x => !string.IsNullOrEmpty(x.Duration))
-            .WithMessage("Duration must be in format: '4 years', '8 semesters', etc.");
+            .WithMessage("Duration must be in format: '4 năm', '8 học kỳ', '3 năm (9 học kỳ)', etc.");
 
         RuleFor(x => x.Description)
             .Length(50, 5000).When(x => !string.IsNullOrEmpty(x.Description))
