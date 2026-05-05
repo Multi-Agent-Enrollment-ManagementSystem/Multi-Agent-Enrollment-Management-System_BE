@@ -22,4 +22,6 @@ public partial class EnrollmentYear
     public virtual ICollection<AdmissionType> AdmissionTypes { get; set; } = new List<AdmissionType>();
 
     public virtual ICollection<Program> Programs { get; set; } = new List<Program>();
+
+    public virtual ICollection<TuitionFee> TuitionFees { get; set; } = new List<TuitionFee>();
 }

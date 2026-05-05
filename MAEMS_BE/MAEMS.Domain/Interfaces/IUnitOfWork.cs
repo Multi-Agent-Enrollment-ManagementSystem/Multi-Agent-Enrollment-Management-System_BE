@@ -23,8 +23,10 @@ public interface IUnitOfWork : IDisposable
     INotificationRepository Notifications { get; }
 
     IPaymentRepository Payments { get; }
-    
+
     IRegisterEventRepository RegisterEvents { get; }
+
+    ITuitionFeeRepository TuitionFees { get; }
 
     Task<int> SaveChangesAsync();
     Task BeginTransactionAsync();
