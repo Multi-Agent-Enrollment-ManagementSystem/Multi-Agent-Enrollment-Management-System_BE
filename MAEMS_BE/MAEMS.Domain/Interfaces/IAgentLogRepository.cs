@@ -28,4 +28,7 @@ public interface IAgentLogRepository : IGenericRepository<AgentLog>
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default);
+
+    // New: Count AgentLogs by CreatedAt in SQL
+    Task<int> CountByCreatedAtAsync(DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default);
 }
