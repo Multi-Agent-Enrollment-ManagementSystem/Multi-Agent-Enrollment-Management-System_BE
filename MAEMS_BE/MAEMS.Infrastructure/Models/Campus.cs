@@ -22,4 +22,6 @@ public partial class Campus
     public bool? IsActive { get; set; }
 
     public virtual ICollection<ProgramAdmissionConfig> ProgramAdmissionConfigs { get; set; } = new List<ProgramAdmissionConfig>();
+
+    public virtual ICollection<TuitionFee> TuitionFees { get; set; } = new List<TuitionFee>();
 }

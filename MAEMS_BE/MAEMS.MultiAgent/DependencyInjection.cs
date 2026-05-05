@@ -1,4 +1,5 @@
 using MAEMS.Application.Interfaces;
+using MAEMS.Application.Services;
 using MAEMS.MultiAgent.Agents;
 using MAEMS.MultiAgent.RAG.Interfaces;
 using MAEMS.MultiAgent.RAG.Services;
@@ -39,6 +40,9 @@ public static class DependencyInjection
         // ChatBoxAgent — handle Q&A about admission requirements
         // Uses Application.Interfaces.IChatBoxAgent interface (not the one in MultiAgent.Agents)
         services.AddScoped<IChatBoxAgent, ChatBoxAgent>();
+
+        // Tuition Fee Service - for RAG to answer tuition-related questions
+        services.AddScoped<TuitionFeeService>();
 
         // RAG Services - Use factory to create scoped instances from singleton BackgroundService
         services.AddScoped<IRagDocumentLoader, RagDocumentLoader>();

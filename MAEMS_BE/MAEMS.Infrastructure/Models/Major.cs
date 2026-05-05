@@ -20,4 +20,6 @@ public partial class Major
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<Program> Programs { get; set; } = new List<Program>();
+
+    public virtual ICollection<TuitionFee> TuitionFees { get; set; } = new List<TuitionFee>();
 }

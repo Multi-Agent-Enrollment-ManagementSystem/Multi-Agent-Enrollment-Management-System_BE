@@ -316,6 +316,22 @@ public class ChatBoxController : ControllerBase
                 return step.status.ToString().Contains("Success") || step.status.ToString().Contains("Ready");
             });
 
+            // Check if collection is empty (only check step 3 which has documentCount)
+            var collectionStep = testResult.steps.FirstOrDefault(s => ((dynamic)s).step == 3);
+            var isCollectionEmpty = false;
+            if (collectionStep != null)
+            {
+                dynamic step = collectionStep;
+                // Use reflection to safely check if documentCount exists and equals 0
+                var type = step.GetType();
+                var docCountProp = type.GetProperty("documentCount");
+                if (docCountProp != null)
+                {
+                    var docCount = docCountProp.GetValue(step);
+                    isCollectionEmpty = docCount != null && (int)docCount == 0;
+                }
+            }
+
             return Ok(new
             {
                 testResult.timestamp,
@@ -327,7 +343,7 @@ public class ChatBoxController : ControllerBase
                 testResult.steps,
                 nextSteps = new
                 {
-                    step1 = allSuccess && testResult.steps.Any(s => ((dynamic)s).documentCount == 0)
+                    step1 = allSuccess && isCollectionEmpty
                         ? "Run POST /api/chatbox/index-from-database to populate the collection"
                         : "Collection is ready for queries",
                     step2 = "Test a chat query with POST /api/chatbox/ask",
