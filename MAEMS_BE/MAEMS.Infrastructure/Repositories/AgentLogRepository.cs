@@ -219,6 +219,17 @@ public sealed class AgentLogRepository : IAgentLogRepository
         return (mapped, totalCount);
     }
 
+    public async Task<int> CountByCreatedAtAsync(DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken = default)
+    {
+        // Đảm bảo DateTime có Kind=Unspecified để tránh lỗi PostgreSQL
+        var from = DateTime.SpecifyKind(fromUtc, DateTimeKind.Unspecified);
+        var to = DateTime.SpecifyKind(toUtc, DateTimeKind.Unspecified);
+        return await _context.AgentLogs
+            .AsNoTracking()
+            .Where(a => a.CreatedAt >= from && a.CreatedAt < to)
+            .CountAsync(cancellationToken);
+    }
+
     private static DomainAgentLog MapToDomain(InfraAgentLog infra)
     {
         return new DomainAgentLog

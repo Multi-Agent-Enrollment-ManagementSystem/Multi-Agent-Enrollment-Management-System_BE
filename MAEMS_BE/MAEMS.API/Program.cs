@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using MAEMS.API.Filters;
+using MAEMS.Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -161,6 +162,9 @@ builder.Services.AddSwaggerGen(c =>
     c.OperationFilter<FileUploadOperationFilter>();
 });
 
+builder.Services.AddHostedService<SystemCpuMonitorService>();
+builder.Services.AddHostedService<SystemPerformancePushService>();
+
 var app = builder.Build();
 
 // Configure pipeline
@@ -177,6 +181,7 @@ app.UseCors("AllowFE");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapHub<NotificationHub>("/api/hubs/notifications");
+app.MapHub<SystemMonitorHub>("/systemMonitorHub");
 app.MapControllers();
 
 app.Run();
