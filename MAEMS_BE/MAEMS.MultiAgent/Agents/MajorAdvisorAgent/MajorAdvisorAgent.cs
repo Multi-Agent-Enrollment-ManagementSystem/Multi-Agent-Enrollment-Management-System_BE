@@ -68,7 +68,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         IFormFile file,
         CancellationToken cancellationToken = default)
     {
-        var result = new MajorAdvisorResult();
+        var result = new MajorAdvisorResult
+        {
+            RawOllamaResponses = new Dictionary<string, string>()
+        };
         var startTime = DateTime.UtcNow;
 
         try
@@ -81,60 +84,86 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             var images = await PrepareImagesAsync(file, cancellationToken);
 
             // Step 2: Detect document type
-            var docType = await DetectDocumentTypeAsync(images.First(), file.FileName, cancellationToken);
+            var (docType, docTypeRaw) = await DetectDocumentTypeAsync(images.First(), file.FileName, cancellationToken);
             result.DetectedDocumentType = docType.Type;
+            result.RawOllamaResponses["document_type_detection"] = docTypeRaw;
 
             if (docType.Type == DocumentType.Unknown)
             {
-                result.Success = false;
+                result.Result = "failed";
                 result.ErrorMessage = "Không thể xác định loại tài liệu. Vui lòng tải lên học bạ THPT hoặc kết quả thi ĐGNL.";
-                await LogToAgentLogAsync(result, "failed", startTime, cancellationToken);
+                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
             // Step 3: Extract scores based on document type
-            var scores = await ExtractScoresAsync(images, docType.Type, file.FileName, cancellationToken);
+            var (scores, scoresRaw) = await ExtractScoresAsync(images, docType.Type, file.FileName, cancellationToken);
             result.Scores = scores;
+            result.RawOllamaResponses["score_extraction"] = scoresRaw;
 
-            // Step 4: Load majors from database
-            var majors = await LoadMajorsAsync(cancellationToken);
+            // Step 4: Load programs from database
+            var programs = await LoadProgramsAsync(cancellationToken);
 
-            if (majors.Count == 0)
+            if (programs.Count == 0)
             {
-                result.Success = false;
-                result.ErrorMessage = "Không tìm thấy danh sách ngành học trong hệ thống.";
-                await LogToAgentLogAsync(result, "failed", startTime, cancellationToken);
+                result.Result = "failed";
+                result.ErrorMessage = "Không tìm thấy danh sách chương trình đào tạo trong hệ thống.";
+                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
-            // Step 4.5: Filter relevant majors based on scores
-            var relevantMajors = FilterRelevantMajors(majors, docType.Type, scores);
+            // Step 4.5: Filter relevant programs based on scores
+            var relevantPrograms = FilterRelevantPrograms(programs, docType.Type, scores);
 
-            if (relevantMajors.Count == 0)
+            if (relevantPrograms.Count == 0)
             {
-                result.Success = false;
-                result.ErrorMessage = "Không tìm thấy ngành phù hợp với điểm số của bạn.";
-                await LogToAgentLogAsync(result, "failed", startTime, cancellationToken);
+                result.Result = "failed";
+                result.ErrorMessage = "Không tìm thấy chương trình phù hợp với điểm số của bạn.";
+                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
-            // Step 5: Get major recommendations
-            var recommendations = await GetRecommendationsAsync(
+            // Step 5: Get program recommendations
+            var (recommendations, recommendRaw) = await GetRecommendationsAsync(
                 docType.Type,
                 scores,
-                relevantMajors,
+                relevantPrograms,
                 file.FileName,
                 cancellationToken);
 
             result.Recommendations = recommendations;
-            result.Success = true;
+            result.RawOllamaResponses["program_recommendation"] = recommendRaw;
+            result.Result = "passed";
+
+            // Step 5.5: Build summary for QA
+            var summaryParts = new List<string>
+            {
+                $"Document Type: {docType.Type}",
+                $"Programs Recommended: {recommendations.Count}",
+                $"Top Match: {recommendations.FirstOrDefault()?.ProgramName ?? "N/A"} ({recommendations.FirstOrDefault()?.MatchScore ?? 0}/100)"
+            };
+
+            if (scores.Transcript != null)
+            {
+                summaryParts.Add($"GPA: {scores.Transcript.AverageGpa:F2}");
+            }
+            else if (scores.Competency != null)
+            {
+                summaryParts.Add($"ĐGNL Score: {scores.Competency.TotalScore}/1200");
+            }
+            else if (scores.SchoolRank != null)
+            {
+                summaryParts.Add($"SchoolRank: Top{scores.SchoolRank.Rank}, Score: {scores.SchoolRank.Grade12Score}");
+            }
+
+            result.RawOllamaResponses["summary"] = string.Join(" | ", summaryParts);
 
             _logger.LogInformation(
                 "MajorAdvisorAgent: Analysis completed for '{FileName}' - {Count} recommendations generated",
                 file.FileName, recommendations.Count);
 
             // Step 6: Log to AgentLog for QA review
-            await LogToAgentLogAsync(result, "success", startTime, cancellationToken);
+            await LogToAgentLogAsync(result, startTime, cancellationToken);
 
             return result;
         }
@@ -142,10 +171,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         {
             _logger.LogError(ex, "MajorAdvisorAgent: Error analyzing '{FileName}'", file.FileName);
 
-            result.Success = false;
+            result.Result = "failed";
             result.ErrorMessage = $"Lỗi khi phân tích tài liệu: {ex.Message}";
 
-            await LogToAgentLogAsync(result, "failed", startTime, cancellationToken);
+            await LogToAgentLogAsync(result, startTime, cancellationToken);
 
             return result;
         }
@@ -187,7 +216,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 
     // ── Step 2: Detect document type ─────────────────────────────────────────
 
-    private async Task<DocumentTypeResult> DetectDocumentTypeAsync(
+    private async Task<(DocumentTypeResult Result, string RawResponse)> DetectDocumentTypeAsync(
         string imageBase64,
         string fileName,
         CancellationToken cancellationToken)
@@ -214,6 +243,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         {
             "transcript" => DocumentType.Transcript,
             "competency_test" => DocumentType.CompetencyTest,
+            "schoolrank" => DocumentType.SchoolRank,
             _ => DocumentType.Unknown
         };
 
@@ -221,22 +251,25 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             "MajorAdvisorAgent: Document type detected as '{Type}' (confidence: {Confidence:F2})",
             docType, ollamaResponse.Confidence);
 
-        return new DocumentTypeResult
+        var result = new DocumentTypeResult
         {
             Type = docType,
             Confidence = ollamaResponse.Confidence
         };
+
+        return (result, responseBody);
     }
 
     // ── Step 3: Extract scores ────────────────────────────────────────────────
 
-    private async Task<ExtractedScores> ExtractScoresAsync(
+    private async Task<(ExtractedScores Scores, string RawResponse)> ExtractScoresAsync(
         List<string> images,
         DocumentType docType,
         string fileName,
         CancellationToken cancellationToken)
     {
         var scores = new ExtractedScores();
+        string rawResponse;
 
         if (docType == DocumentType.Transcript)
         {
@@ -255,8 +288,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 ]
             };
 
-            var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-            var ollamaResponse = ParseOllamaResponse<OllamaTranscriptResponse>(responseBody, fileName);
+            rawResponse = await CallOllamaAsync(requestBody, fileName, cancellationToken);
+            var ollamaResponse = ParseOllamaResponse<OllamaTranscriptResponse>(rawResponse, fileName);
 
             if (!ollamaResponse.Success)
             {
@@ -282,8 +315,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 ]
             };
 
-            var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-            var ollamaResponse = ParseOllamaResponse<OllamaCompetencyResponse>(responseBody, fileName);
+            rawResponse = await CallOllamaAsync(requestBody, fileName, cancellationToken);
+            var ollamaResponse = ParseOllamaResponse<OllamaCompetencyResponse>(rawResponse, fileName);
 
             if (!ollamaResponse.Success)
             {
@@ -300,8 +333,46 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 PercentileRange = ollamaResponse.PercentileRange
             };
         }
+        else if (docType == DocumentType.SchoolRank)
+        {
+            var requestBody = new OllamaChatRequest
+            {
+                Model = _modelName,
+                Stream = false,
+                Messages =
+                [
+                    new OllamaMessage
+                    {
+                        Role = "user",
+                        Content = MajorAdvisorAgentPrompts.SchoolRankScoreExtraction,
+                        Images = images
+                    }
+                ]
+            };
 
-        return scores;
+            rawResponse = await CallOllamaAsync(requestBody, fileName, cancellationToken);
+            var ollamaResponse = ParseOllamaResponse<OllamaSchoolRankResponse>(rawResponse, fileName);
+
+            if (!ollamaResponse.Success)
+            {
+                throw new InvalidOperationException($"Không thể đọc thông tin từ chứng nhận SchoolRank: {ollamaResponse.ErrorMessage}");
+            }
+
+            scores.SchoolRank = new SchoolRankData
+            {
+                Rank = ollamaResponse.Rank,
+                Grade12Score = ollamaResponse.Grade12Score,
+                StudentName = ollamaResponse.StudentName,
+                SchoolName = ollamaResponse.SchoolName,
+                Year = ollamaResponse.Year
+            };
+        }
+        else
+        {
+            rawResponse = "{}"; // Unknown document type
+        }
+
+        return (scores, rawResponse);
     }
 
     private TranscriptData MapTranscriptScores(OllamaTranscriptResponse response)
@@ -364,62 +435,63 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         return data;
     }
 
-    // ── Step 4: Load majors from database ─────────────────────────────────────
+    // ── Step 4: Load programs from database ─────────────────────────────────────
 
-    private async Task<List<Major>> LoadMajorsAsync(CancellationToken cancellationToken)
+    private async Task<List<Program>> LoadProgramsAsync(CancellationToken cancellationToken)
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-        var majors = await unitOfWork.Majors.GetAllAsync();
-        var activeMajors = majors.Where(m => m.IsActive == true).ToList();
+        var programs = await unitOfWork.Programs.GetAllAsync();
+        var activePrograms = programs.Where(p => p.IsActive == true).ToList();
 
         _logger.LogInformation(
-            "MajorAdvisorAgent: Loaded {Count} active majors from database (will filter by relevance before LLM)",
-            activeMajors.Count);
+            "MajorAdvisorAgent: Loaded {Count} active programs from database (will filter by relevance before LLM)",
+            activePrograms.Count);
 
-        return activeMajors;
+        return activePrograms;
     }
 
-    // ── Helper: Filter relevant majors based on scores ───────────────────────
+    // ── Helper: Filter relevant programs based on scores ───────────────────────
 
-    private List<Major> FilterRelevantMajors(List<Major> allMajors, DocumentType docType, ExtractedScores scores)
+    private List<Program> FilterRelevantPrograms(List<Program> allPrograms, DocumentType docType, ExtractedScores scores)
     {
-        const int MaxMajorsForLlm = 20; // Limit to prevent LLM overload
+        const int MaxProgramsForLlm = 20; // Limit to prevent LLM overload
 
         // For competency test: filter by total score threshold
         if (docType == DocumentType.CompetencyTest && scores.Competency != null)
         {
             var totalScore = scores.Competency.TotalScore;
 
-            // Categorize majors by competitiveness (simplified heuristic)
-            var relevantMajors = allMajors
-                .Where(m =>
+            // Categorize programs by competitiveness (simplified heuristic)
+            var relevantPrograms = allPrograms
+                .Where(p =>
                 {
-                    var code = m.MajorCode?.ToUpperInvariant() ?? "";
+                    var name = p.ProgramName?.ToLowerInvariant() ?? "";
 
-                    // High-demand STEM majors need ≥700
-                    if ((code.Contains("CNTT") || code.Contains("KTPM") || code == "Y" || code == "DUOC") 
+                    // High-demand STEM programs need ≥700
+                    if ((name.Contains("công nghệ thông tin") || name.Contains("khoa học máy tính") 
+                        || name.Contains("y") || name.Contains("dược")) 
                         && totalScore < 700)
                         return false;
 
-                    // Standard majors accessible at ≥500
+                    // Standard programs accessible at ≥500
                     if (totalScore < 500)
                         return false;
 
                     return true;
                 })
-                .Take(MaxMajorsForLlm)
+                .Take(MaxProgramsForLlm)
                 .ToList();
 
             _logger.LogInformation(
-                "MajorAdvisorAgent: Filtered to {Count} majors for ĐGNL score {Score}",
-                relevantMajors.Count, totalScore);
+                "MajorAdvisorAgent: Filtered to {Count} programs for ĐGNL score {Score}",
+                relevantPrograms.Count, totalScore);
 
-            return relevantMajors;
+            return relevantPrograms;
         }
 
-        // For transcript: filter by subject strength (simplified - take top majors)
+        // For transcript: filter by subject strength (simplified - take top programs)
         if (docType == DocumentType.Transcript && scores.Transcript != null)
         {
             var transcript = scores.Transcript;
@@ -435,19 +507,18 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             if (transcript.Grade12_DiaLy >= 8.0m) strongSubjects.Add("Địa");
             if (transcript.Grade12_NgoaiNgu >= 8.0m) strongSubjects.Add("Anh");
 
-            // Simple heuristic: if strong in STEM subjects, prioritize STEM majors
+            // Simple heuristic: if strong in STEM subjects, prioritize STEM programs
             var hasStem = strongSubjects.Any(s => s == "Toán" || s == "Lý" || s == "Hóa");
             var hasHumanities = strongSubjects.Any(s => s == "Văn" || s == "Sử" || s == "Địa");
 
-            var relevantMajors = allMajors
-                .Where(m =>
+            var relevantPrograms = allPrograms
+                .Where(p =>
                 {
-                    var code = m.MajorCode?.ToUpperInvariant() ?? "";
-                    var name = m.MajorName?.ToLowerInvariant() ?? "";
+                    var name = p.ProgramName?.ToLowerInvariant() ?? "";
 
-                    // STEM majors if strong in math/science
-                    if (hasStem && (code.Contains("CNTT") || code.Contains("KT") || name.Contains("kỹ thuật") 
-                        || name.Contains("công nghệ")))
+                    // STEM programs if strong in math/science
+                    if (hasStem && (name.Contains("công nghệ thông tin") || name.Contains("kỹ thuật") 
+                        || name.Contains("công nghệ") || name.Contains("khoa học máy tính")))
                         return true;
 
                     // Humanities/Business if strong in language/social
@@ -455,48 +526,99 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                         || name.Contains("ngôn ngữ") || name.Contains("du lịch")))
                         return true;
 
-                    // Include balanced majors for all students
+                    // Include balanced programs for all students
                     if (name.Contains("quản trị kinh doanh") || name.Contains("marketing"))
                         return true;
 
                     return false;
                 })
-                .Take(MaxMajorsForLlm)
+                .Take(MaxProgramsForLlm)
                 .ToList();
 
             // Fallback: if filtering is too aggressive, take top 20 by alphabetical
-            if (relevantMajors.Count < 10)
+            if (relevantPrograms.Count < 10)
             {
-                relevantMajors = allMajors.Take(MaxMajorsForLlm).ToList();
+                relevantPrograms = allPrograms.Take(MaxProgramsForLlm).ToList();
             }
 
             _logger.LogInformation(
-                "MajorAdvisorAgent: Filtered to {Count} majors for transcript (strong subjects: {Subjects})",
-                relevantMajors.Count, string.Join(", ", strongSubjects));
+                "MajorAdvisorAgent: Filtered to {Count} programs for transcript (strong subjects: {Subjects})",
+                relevantPrograms.Count, string.Join(", ", strongSubjects));
 
-            return relevantMajors;
+            return relevantPrograms;
         }
 
-        // Fallback: return top N majors
-        return allMajors.Take(MaxMajorsForLlm).ToList();
+        // For SchoolRank: filter by rank and combined score
+        if (docType == DocumentType.SchoolRank && scores.SchoolRank != null)
+        {
+            var rank = scores.SchoolRank.Rank ?? int.MaxValue;
+            var grade12Score = scores.SchoolRank.Grade12Score ?? 0;
+
+            // Top ranks get access to all programs
+            if (rank <= 100)
+            {
+                _logger.LogInformation(
+                    "MajorAdvisorAgent: SchoolRank Top{Rank} - all programs accessible",
+                    rank);
+                return allPrograms.Take(MaxProgramsForLlm).ToList();
+            }
+
+            // Filter by combined score for lower ranks
+            var relevantPrograms = allPrograms
+                .Where(p =>
+                {
+                    var name = p.ProgramName?.ToLowerInvariant() ?? "";
+
+                    // High-demand programs need ≥25
+                    if ((name.Contains("công nghệ thông tin") || name.Contains("khoa học máy tính") 
+                        || name.Contains("y") || name.Contains("dược")) 
+                        && grade12Score < 25)
+                        return false;
+
+                    // Standard programs accessible at ≥21
+                    if (grade12Score < 21)
+                        return false;
+
+                    return true;
+                })
+                .Take(MaxProgramsForLlm)
+                .ToList();
+
+            _logger.LogInformation(
+                "MajorAdvisorAgent: Filtered to {Count} programs for SchoolRank (Rank: {Rank}, Score: {Score})",
+                relevantPrograms.Count, rank, grade12Score);
+
+            return relevantPrograms;
+        }
+
+        // Fallback: return top N programs
+        return allPrograms.Take(MaxProgramsForLlm).ToList();
     }
 
-    // ── Step 5: Get major recommendations ─────────────────────────────────────
+    // ── Step 5: Get program recommendations ─────────────────────────────────────
 
-    private async Task<List<MajorRecommendation>> GetRecommendationsAsync(
+    private async Task<(List<ProgramRecommendation> Recommendations, string RawResponse)> GetRecommendationsAsync(
         DocumentType docType,
         ExtractedScores scores,
-        List<Major> majors,
+        List<Program> programs,
         string fileName,
         CancellationToken cancellationToken)
     {
-        var docTypeStr = docType == DocumentType.Transcript ? "transcript" : "competency_test";
-        var scoresJson = JsonSerializer.Serialize(scores, ResponseDeserializerOptions);
-        var majorsJson = JsonSerializer.Serialize(majors.Select(m => new
+        var docTypeStr = docType switch
         {
-            m.MajorCode,
-            m.MajorName,
-            m.Description
+            DocumentType.Transcript => "transcript",
+            DocumentType.CompetencyTest => "competency_test",
+            DocumentType.SchoolRank => "schoolrank",
+            _ => "unknown"
+        };
+        var scoresJson = JsonSerializer.Serialize(scores, ResponseDeserializerOptions);
+        var programsJson = JsonSerializer.Serialize(programs.Select(p => new
+        {
+            p.ProgramId,
+            p.ProgramName,
+            p.Description,
+            p.Duration,
+            p.CareerProspects
         }), ResponseDeserializerOptions);
 
         var prompt = $"""
@@ -505,10 +627,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             [SCORES]: 
             {scoresJson}
 
-            [MAJORS]:
-            {majorsJson}
+            [PROGRAMS]:
+            {programsJson}
 
-            {MajorAdvisorAgentPrompts.MajorRecommendation}
+            {MajorAdvisorAgentPrompts.ProgramRecommendation}
             """;
 
         var requestBody = new OllamaChatRequest
@@ -526,25 +648,75 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         };
 
         var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-        var recommendations = ParseOllamaResponse<List<OllamaRecommendationResponse>>(responseBody, fileName);
+        var recommendations = ParseOllamaResponse<List<OllamaProgramRecommendationResponse>>(responseBody, fileName);
 
-        return recommendations.Select(r => new MajorRecommendation
+        // Build subject score dictionary for match calculation
+        Dictionary<string, decimal> studentScores;
+        decimal? schoolRankScore = null;
+        int? schoolRank = null;
+        decimal? competencyTotalScore = null;
+
+        if (docType == DocumentType.Transcript && scores.Transcript != null)
         {
-            MajorCode = r.MajorCode,
-            MajorName = r.MajorName,
-            MatchScore = r.MatchScore,
-            Reasoning = r.Reasoning,
-            Strengths = r.Strengths,
-            Concerns = r.Concerns,
-            AdmissionMethod = r.AdmissionMethod
-        }).ToList();
+            studentScores = ProgramSubjectMatcher.BuildScoreDictionary(scores.Transcript);
+        }
+        else if (docType == DocumentType.CompetencyTest && scores.Competency != null)
+        {
+            studentScores = ProgramSubjectMatcher.BuildScoreDictionary(scores.Competency);
+            competencyTotalScore = scores.Competency.TotalScore; // Pass ĐGNL total score for bonus
+        }
+        else if (docType == DocumentType.SchoolRank && scores.SchoolRank != null)
+        {
+            // SchoolRank doesn't have detailed subject scores, use fallback
+            studentScores = new Dictionary<string, decimal>();
+            schoolRankScore = scores.SchoolRank.Grade12Score;
+            schoolRank = scores.SchoolRank.Rank;
+        }
+        else
+        {
+            studentScores = new Dictionary<string, decimal>();
+        }
+
+        // Calculate match scores and map to DTOs
+        var result = recommendations.Select(r =>
+        {
+            // Find corresponding program to get full name for classification
+            var program = programs.FirstOrDefault(p => p.ProgramId == r.ProgramId);
+            var programName = program?.ProgramName ?? r.ProgramName;
+
+            // Calculate backend match score with all available performance metrics
+            var calculatedMatchScore = ProgramSubjectMatcher.CalculateMatchScore(
+                studentScores,
+                programName,
+                schoolRankScore,
+                schoolRank,
+                competencyTotalScore);
+
+            return new ProgramRecommendation
+            {
+                ProgramId = r.ProgramId,
+                ProgramName = r.ProgramName,
+                MajorName = r.MajorName,
+                Description = r.Description,
+                Duration = r.Duration,
+                CareerProspects = r.CareerProspects,
+                MatchScore = calculatedMatchScore, // Use calculated score
+                Reasoning = r.Reasoning,
+                Strengths = r.Strengths,
+                Concerns = r.Concerns,
+                AdmissionMethod = r.AdmissionMethod
+            };
+        })
+        .OrderByDescending(r => r.MatchScore) // Sort by calculated match score
+        .ToList();
+
+        return (result, responseBody);
     }
 
     // ── Step 6: Log to AgentLog ───────────────────────────────────────────────
 
     private async Task LogToAgentLogAsync(
         MajorAdvisorResult result,
-        string status,
         DateTime startTime,
         CancellationToken cancellationToken)
     {
@@ -565,7 +737,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 DocumentId = null,    // No document entity - file not stored
                 AgentType = "MajorAdvisor",
                 Action = "AnalyzeDocument",
-                Status = status,
+                Status = "llm_response",
                 OutputData = outputData,
                 CreatedAt = DateTime.Now // Use local time for PostgreSQL timestamp without time zone
             };
@@ -575,8 +747,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 
             var duration = DateTime.UtcNow - startTime;
             _logger.LogInformation(
-                "MajorAdvisorAgent: Logged to AgentLog (LogId={LogId}, Status={Status}, Duration={Duration}ms)",
-                log.LogId, status, duration.TotalMilliseconds);
+                "MajorAdvisorAgent: Logged to AgentLog (LogId={LogId}, Result={Result}, Duration={Duration}ms)",
+                log.LogId, result.Result, duration.TotalMilliseconds);
         }
         catch (Exception ex)
         {
@@ -705,11 +877,26 @@ internal sealed class OllamaCompetencyResponse
     public string? ErrorMessage { get; set; }
 }
 
-internal sealed class OllamaRecommendationResponse
+internal sealed class OllamaSchoolRankResponse
 {
-    public string MajorCode { get; set; } = string.Empty;
-    public string MajorName { get; set; } = string.Empty;
-    public int MatchScore { get; set; }
+    public bool Success { get; set; }
+    public int? Rank { get; set; }
+    public decimal? Grade12Score { get; set; }
+    public string? StudentName { get; set; }
+    public string? SchoolName { get; set; }
+    public int? Year { get; set; }
+    public string? ErrorMessage { get; set; }
+}
+
+internal sealed class OllamaProgramRecommendationResponse
+{
+    public int ProgramId { get; set; }
+    public string ProgramName { get; set; } = string.Empty;
+    public string? MajorName { get; set; }
+    public string? Description { get; set; }
+    public string? Duration { get; set; }
+    public string? CareerProspects { get; set; }
+    // MatchScore is now calculated in backend, not from LLM
     public string Reasoning { get; set; } = string.Empty;
     public List<string> Strengths { get; set; } = new();
     public List<string> Concerns { get; set; } = new();

@@ -73,7 +73,7 @@ public class MajorAdvisorController : ControllerBase
 
             var result = await _agent.AnalyzeAndRecommendAsync(request.File, cancellationToken);
 
-            if (!result.Success)
+            if (result.Result != "passed")
             {
                 return BadRequest(new { error = result.ErrorMessage });
             }

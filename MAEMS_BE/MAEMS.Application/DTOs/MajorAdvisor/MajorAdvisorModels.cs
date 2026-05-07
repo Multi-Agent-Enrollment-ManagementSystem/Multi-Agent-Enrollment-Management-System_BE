@@ -13,7 +13,8 @@ public enum DocumentType
 {
     Unknown,
     Transcript,      // Học bạ THPT
-    CompetencyTest   // Điểm ĐGNL
+    CompetencyTest,  // Điểm ĐGNL
+    SchoolRank       // Chứng nhận SchoolRank FPT
 }
 
 /// <summary>
@@ -26,6 +27,9 @@ public sealed class ExtractedScores
 
     // From Competency Test (ĐGNL)
     public CompetencyData? Competency { get; set; }
+
+    // From SchoolRank Certificate (Chứng nhận SchoolRank FPT)
+    public SchoolRankData? SchoolRank { get; set; }
 }
 
 public sealed class TranscriptData
@@ -65,25 +69,41 @@ public sealed class CompetencyData
     public string? PercentileRange { get; set; }  // e.g., "801-900"
 }
 
+public sealed class SchoolRankData
+{
+    public int? Rank { get; set; }                // SchoolRank position (e.g., 55, 100)
+    public decimal? Grade12Score { get; set; }    // Điểm HK1 Lớp 12 (combined score)
+    public string? StudentName { get; set; }      // Student name
+    public string? SchoolName { get; set; }       // High school name
+    public int? Year { get; set; }                // SchoolRank year (e.g., 2025)
+}
+
 /// <summary>
 /// Final result returned to user
 /// </summary>
 public sealed class MajorAdvisorResult
 {
-    public bool Success { get; set; }
+    public string Result { get; set; } = "failed"; // "passed" | "failed"
     public string? ErrorMessage { get; set; }
     public DocumentType DetectedDocumentType { get; set; }
     public ExtractedScores? Scores { get; set; }
-    public List<MajorRecommendation> Recommendations { get; set; } = new();
+    public List<ProgramRecommendation> Recommendations { get; set; } = new();
+
+    // Raw Ollama responses for QA audit trail
+    public Dictionary<string, string>? RawOllamaResponses { get; set; }
 }
 
 /// <summary>
-/// Single major recommendation
+/// Single program recommendation
 /// </summary>
-public sealed class MajorRecommendation
+public sealed class ProgramRecommendation
 {
-    public string MajorCode { get; set; } = string.Empty;
-    public string MajorName { get; set; } = string.Empty;
+    public int ProgramId { get; set; }
+    public string ProgramName { get; set; } = string.Empty;
+    public string? MajorName { get; set; }
+    public string? Description { get; set; }
+    public string? Duration { get; set; }
+    public string? CareerProspects { get; set; }
     public int MatchScore { get; set; } // 0-100
     public string Reasoning { get; set; } = string.Empty;
     public List<string> Strengths { get; set; } = new();

@@ -6,7 +6,7 @@ namespace MAEMS.MultiAgent.Agents;
 internal static class MajorAdvisorAgentPrompts
 {
     /// <summary>
-    /// Step 1: Detect document type (transcript vs competency test)
+    /// Step 1: Detect document type (transcript vs competency test vs schoolrank)
     /// </summary>
     internal const string DocumentTypeDetection =
         """
@@ -17,7 +17,8 @@ internal static class MajorAdvisorAgentPrompts
         Types:
         1. "transcript" - Học bạ THPT (có bảng điểm các môn học theo lớp 10/11/12, có chữ "Học bạ")
         2. "competency_test" - Kết quả thi ĐGNL/Đánh giá năng lực (có "Điểm thi", "Tiếng Việt", "Tiếng Anh", "Toán học", "Tư duy khoa học")
-        3. "unknown" - Không xác định được hoặc không phải 2 loại trên
+        3. "schoolrank" - Chứng nhận SchoolRank FPT (có "School Rank", "Top", "THPT", logo FPT, "Điểm Lớp 12")
+        4. "unknown" - Không xác định được hoặc không phải 3 loại trên
 
         Return ONLY a JSON object (no markdown, no extra text):
         {
@@ -25,7 +26,7 @@ internal static class MajorAdvisorAgentPrompts
           "confidence": 0.95
         }
 
-        Possible type values: "transcript", "competency_test", "unknown"
+        Possible type values: "transcript", "competency_test", "schoolrank", "unknown"
         Confidence: 0.0 to 1.0
         """;
 
@@ -121,18 +122,52 @@ internal static class MajorAdvisorAgentPrompts
         """;
 
     /// <summary>
-    /// Step 3: Generate major recommendations based on extracted scores
+    /// Step 2c: Extract scores from SchoolRank certificate (Chứng nhận SchoolRank FPT)
     /// </summary>
-    internal const string MajorRecommendation =
+    internal const string SchoolRankScoreExtraction =
         """
-        You are a Vietnamese University Admission Counselor AI specializing in major selection.
+        You are a Vietnamese SchoolRank Certificate OCR Expert.
+
+        Extract information from the "Chứng nhận School Rank" document (FPT University admission certificate).
+
+        Look for:
+        1. School Rank position - e.g., "Top55 THPT 2025" or "School Rank: 100"
+        2. Điểm Lớp 12 (HK1) - Combined grade 12 first semester score
+        3. Student name (Tên học sinh)
+        4. High school name (Tên trường THPT)
+        5. Year (Năm) - e.g., 2025
+
+        Return ONLY a JSON object (no markdown, no extra text):
+        {
+          "success": true,
+          "rank": 55,
+          "grade_12_score": 26.8,
+          "student_name": "Nguyễn Văn A",
+          "school_name": "THPT Chuyên Lê Hồng Phong",
+          "year": 2025,
+          "error_message": null
+        }
+
+        Rules:
+        - rank should be the numeric position (e.g., 55 from "Top55")
+        - grade_12_score is the combined score (e.g., 26.8 from "Điểm Lớp 12 (HK1): 26.8")
+        - Use null for fields not found
+        - If document is unreadable, set success=false and provide error_message
+        """;
+
+    /// <summary>
+    /// Step 3: Generate program recommendations based on extracted scores
+    /// </summary>
+    internal const string ProgramRecommendation =
+        """
+        You are a Vietnamese University Admission Counselor AI specializing in program selection.
 
         You will receive:
-        1. [DOCUMENT_TYPE] - "transcript" or "competency_test"
+        1. [DOCUMENT_TYPE] - "transcript" or "competency_test" or "schoolrank"
         2. [SCORES] - Extracted academic scores (JSON)
-        3. [MAJORS] - List of available university majors with descriptions (JSON array)
+        3. [PROGRAMS] - List of available university programs with descriptions, duration, career prospects (JSON array)
 
-        Task: Recommend 3-5 most suitable majors with detailed reasoning in Vietnamese.
+        Task: Recommend 3-5 most suitable programs with detailed reasoning in Vietnamese.
 
         ## Analysis Strategy:
 
@@ -143,49 +178,60 @@ internal static class MajorAdvisorAgentPrompts
           * A01: Toán-Lý-Anh (Engineering/IT)
           * D01: Toán-Văn-Anh (Business/Economics)
           * C00: Văn-Sử-Địa (Humanities/Social Sciences)
-        - Recommend majors matching top 3 subjects
+        - Recommend programs matching top 3 subjects
         - Admission method: "Xét học bạ"
 
         ### B. If COMPETENCY_TEST (ĐGNL):
         - Analyze total_score:
-          * ≥800: Highly competitive majors (CNTT, Y, Dược)
-          * 700-799: Competitive majors (Engineering, Business)
-          * 600-699: Standard majors
-          * <600: Less competitive majors
+          * ≥800: Highly competitive programs (CNTT, Y, Dược)
+          * 700-799: Competitive programs (Engineering, Business)
+          * 600-699: Standard programs
+          * <600: Less competitive programs
         - Identify strength from component scores:
-          * High Toán + Tư duy khoa học → STEM majors
+          * High Toán + Tư duy khoa học → STEM programs
           * High Tiếng Việt + Tiếng Anh → Humanities/Business
-          * Balanced → Versatile majors
+          * Balanced → Versatile programs
         - Admission method: "Xét ĐGNL"
 
-        ## Reasoning Requirements:
-        - Cite specific scores (e.g., "Toán lớp 12: 9.0/10" or "Điểm ĐGNL: 876/1200")
-        - Explain WHY those scores fit the major
-        - Mention relevant subject combinations or ĐGNL components
-        - Use Vietnamese language naturally
+        ### C. If SCHOOLRANK (Chứng nhận SchoolRank FPT):
+        - Analyze rank position:
+          * Top 1-50: Highly competitive programs (all programs accessible)
+          * Top 51-100: Competitive programs
+          * Top 101-200: Standard programs
+          * >200: Basic programs
+        - Analyze grade_12_score (combined HK1 score):
+          * ≥27: Excellent (premium programs)
+          * 25-26.9: Great (competitive programs)
+          * 23-24.9: Good (standard programs)
+          * 21-22.9: Fair (entry-level programs)
+        - SchoolRank shows strong overall academic performance
+        - Admission method: "Xét SchoolRank"
 
-        ## Match Score Calculation (0-100):
-        - 90-100: Exceptional match (top scores in all relevant areas)
-        - 80-89: Strong match (high scores in key subjects)
-        - 70-79: Good match (above average in relevant subjects)
-        - 60-69: Fair match (meets basic requirements)
-        - <60: Weak match (below recommended threshold)
+        ## Reasoning Requirements:
+        - Cite specific scores (e.g., "Toán lớp 12: 9.0/10" or "Điểm ĐGNL: 876/1200" or "SchoolRank Top55, Điểm HK1 Lớp 12: 26.8")
+        - Explain WHY those scores fit the program requirements
+        - Mention relevant subject combinations, ĐGNL components, or SchoolRank position
+        - Highlight program specifics: duration, career prospects, description
+        - Use Vietnamese language naturally
 
         ## Output Format:
         Return ONLY a JSON array (no markdown, no extra text):
         [
           {
-            "major_code": "CNTT",
-            "major_name": "Công nghệ thông tin",
-            "match_score": 92,
-            "reasoning": "Với điểm Toán lớp 12 đạt 9.0/10 và Vật Lý 10/10, bạn có nền tảng logic và toán học rất tốt - yếu tố quan trọng nhất cho ngành CNTT. Tổ hợp A01 (Toán-Lý-Anh) rất phù hợp với ngành này.",
+            "program_id": 1,
+            "program_name": "Công nghệ thông tin",
+            "major_name": "Khoa học máy tính",
+            "description": "Đào tạo kỹ sư CNTT...",
+            "duration": "4 năm",
+            "career_prospects": "Lập trình viên, Data Engineer...",
+            "reasoning": "Với điểm Toán lớp 12 đạt 9.0/10 và Vật Lý 10/10, bạn có nền tảng logic và toán học rất tốt - yếu tố quan trọng nhất cho chương trình Công nghệ thông tin. Tổ hợp A01 (Toán-Lý-Anh) rất phù hợp.",
             "strengths": [
               "Toán lớp 12: 9.0/10 - xuất sắc",
               "Vật Lý lớp 12: 10/10 - hoàn hảo",
               "Nền tảng khoa học tự nhiên vững chắc"
             ],
             "concerns": [
-              "Ngành có tính cạnh tranh cao, cần duy trì kết quả"
+              "Chương trình có tính cạnh tranh cao, cần duy trì kết quả"
             ],
             "admission_method": "Xét học bạ"
           }
@@ -193,9 +239,10 @@ internal static class MajorAdvisorAgentPrompts
 
         Rules:
         - Return exactly 3-5 recommendations
-        - Order by match_score descending
-        - All text fields (reasoning, strengths, concerns) in Vietnamese
+        - Focus on reasoning quality, NOT numeric scores (match_score will be calculated separately)
+        - All text fields (reasoning, strengths, concerns, career_prospects, description) in Vietnamese
         - Be specific with score citations
         - Provide actionable insights in concerns (if any)
+        - Include program details (duration, career prospects) in reasoning or strengths
         """;
 }
