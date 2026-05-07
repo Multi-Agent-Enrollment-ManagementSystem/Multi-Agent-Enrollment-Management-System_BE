@@ -79,6 +79,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         {
             RawOllamaResponses = new Dictionary<string, string>()
         };
+        var startTime = DateTime.UtcNow;
 
         try
         {
@@ -99,6 +100,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             {
                 result.Result = "failed";
                 result.ErrorMessage = "Không thể xác định loại tài liệu. Vui lòng tải lên học bạ THPT hoặc kết quả thi ĐGNL.";
+                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
@@ -109,6 +111,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             {
                 result.Result = "failed";
                 result.ErrorMessage = "Không tìm thấy danh sách chương trình đào tạo trong hệ thống.";
+                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
@@ -119,6 +122,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             {
                 result.Result = "failed";
                 result.ErrorMessage = "Không tìm thấy chương trình phù hợp với điểm số của bạn.";
+                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
@@ -161,6 +165,9 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 "MajorAdvisorAgent: Analysis completed for '{FileName}' - {Count} recommendations generated",
                 file.FileName, recommendations.Count);
 
+            // Step 6: Log to AgentLog for QA review
+            await LogToAgentLogAsync(result, startTime, cancellationToken);
+
             return result;
         }
         catch (Exception ex)
@@ -169,6 +176,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 
             result.Result = "failed";
             result.ErrorMessage = $"Lỗi khi phân tích tài liệu: {ex.Message}";
+
+            await LogToAgentLogAsync(result, startTime, cancellationToken);
 
             return result;
         }
@@ -569,22 +578,22 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             }
 
             // Load from database
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
-            var programs = await unitOfWork.Programs.GetAllAsync();
-            var activePrograms = programs.Where(p => p.IsActive == true).ToList();
+        var programs = await unitOfWork.Programs.GetAllAsync();
+        var activePrograms = programs.Where(p => p.IsActive == true).ToList();
 
             // Update cache
             _cachedPrograms = activePrograms;
             _cacheExpiry = DateTime.UtcNow.Add(_cacheLifetime);
 
-            _logger.LogInformation(
+        _logger.LogInformation(
                 "MajorAdvisorAgent: Loaded {Count} active programs from database (cached for {Minutes} minutes)",
                 activePrograms.Count, _cacheLifetime.TotalMinutes);
 
-            return activePrograms;
-        }
+        return activePrograms;
+    }
         finally
         {
             _cacheLock.Release();
@@ -850,6 +859,50 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         .ToList();
 
         return (result, responseBody);
+    }
+
+    // ── Step 6: Log to AgentLog ───────────────────────────────────────────────
+
+    private async Task LogToAgentLogAsync(
+        MajorAdvisorResult result,
+        DateTime startTime,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            var outputData = JsonSerializer.Serialize(result, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true
+            });
+
+            var log = new AgentLog
+            {
+                ApplicationId = null, // No application - public service
+                DocumentId = null,    // No document entity - file not stored
+                AgentType = "MajorAdvisor",
+                Action = "AnalyzeDocument",
+                Status = "llm_response",
+                OutputData = outputData,
+                CreatedAt = DateTime.Now // Use local time for PostgreSQL timestamp without time zone
+            };
+
+            await unitOfWork.AgentLogs.AddAsync(log);
+            await unitOfWork.SaveChangesAsync();
+
+            var duration = DateTime.UtcNow - startTime;
+            _logger.LogInformation(
+                "MajorAdvisorAgent: Logged to AgentLog (LogId={LogId}, Result={Result}, Duration={Duration}ms)",
+                log.LogId, result.Result, duration.TotalMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "MajorAdvisorAgent: Failed to log to AgentLog");
+            // Don't throw - logging failure shouldn't break the main flow
+        }
     }
 
     // ── Helper: Call Ollama API ───────────────────────────────────────────────
