@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MAEMS.Application.DTOs.MajorAdvisor;
 using MAEMS.Application.Interfaces;
 using MAEMS.Domain.Entities;
@@ -14,7 +15,7 @@ namespace MAEMS.MultiAgent.Agents;
 
 /// <summary>
 /// Major Advisor Agent - Analyzes academic documents (transcript or competency test)
-/// and recommends suitable university majors. Logs all analysis to AgentLog for QA review.
+/// and recommends suitable university programs. Optimized for speed (no database logging).
 /// </summary>
 public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 {
@@ -25,6 +26,12 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
     private readonly string _apiUrl;
     private readonly string _apiKey;
     private readonly string _modelName;
+
+    // Static cache for programs (refreshed every 5 minutes)
+    private static List<Program>? _cachedPrograms;
+    private static DateTime _cacheExpiry = DateTime.MinValue;
+    private static readonly SemaphoreSlim _cacheLock = new(1, 1);
+    private static readonly TimeSpan _cacheLifetime = TimeSpan.FromMinutes(5);
 
     private static readonly HashSet<string> ImageExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png" };
@@ -83,12 +90,13 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             // Step 1: Prepare images
             var images = await PrepareImagesAsync(file, cancellationToken);
 
-            // Step 2: Detect document type
-            var (docType, docTypeRaw) = await DetectDocumentTypeAsync(images.First(), file.FileName, cancellationToken);
-            result.DetectedDocumentType = docType.Type;
-            result.RawOllamaResponses["document_type_detection"] = docTypeRaw;
+            // Step 2: Detect document type AND extract scores in one call (performance optimization)
+            var (docType, scores, combinedRaw) = await DetectAndExtractAsync(images, file.FileName, cancellationToken);
+            result.DetectedDocumentType = docType;
+            result.Scores = scores;
+            result.RawOllamaResponses["document_analysis"] = combinedRaw;
 
-            if (docType.Type == DocumentType.Unknown)
+            if (docType == DocumentType.Unknown)
             {
                 result.Result = "failed";
                 result.ErrorMessage = "Không thể xác định loại tài liệu. Vui lòng tải lên học bạ THPT hoặc kết quả thi ĐGNL.";
@@ -96,12 +104,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 return result;
             }
 
-            // Step 3: Extract scores based on document type
-            var (scores, scoresRaw) = await ExtractScoresAsync(images, docType.Type, file.FileName, cancellationToken);
-            result.Scores = scores;
-            result.RawOllamaResponses["score_extraction"] = scoresRaw;
-
-            // Step 4: Load programs from database
+            // Step 3: Load programs from database (cached)
             var programs = await LoadProgramsAsync(cancellationToken);
 
             if (programs.Count == 0)
@@ -112,8 +115,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 return result;
             }
 
-            // Step 4.5: Filter relevant programs based on scores
-            var relevantPrograms = FilterRelevantPrograms(programs, docType.Type, scores);
+            // Step 3.5: Filter relevant programs based on scores
+            var relevantPrograms = FilterRelevantPrograms(programs, docType, scores);
 
             if (relevantPrograms.Count == 0)
             {
@@ -123,9 +126,9 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 return result;
             }
 
-            // Step 5: Get program recommendations
+            // Step 4: Get program recommendations
             var (recommendations, recommendRaw) = await GetRecommendationsAsync(
-                docType.Type,
+                docType,
                 scores,
                 relevantPrograms,
                 file.FileName,
@@ -135,10 +138,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             result.RawOllamaResponses["program_recommendation"] = recommendRaw;
             result.Result = "passed";
 
-            // Step 5.5: Build summary for QA
+            // Step 4.5: Build summary for QA
             var summaryParts = new List<string>
             {
-                $"Document Type: {docType.Type}",
+                $"Document Type: {docType}",
                 $"Programs Recommended: {recommendations.Count}",
                 $"Top Match: {recommendations.FirstOrDefault()?.ProgramName ?? "N/A"} ({recommendations.FirstOrDefault()?.MatchScore ?? 0}/100)"
             };
@@ -214,7 +217,125 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             string.Join(", ", ImageExtensions.Concat(PdfExtensions)));
     }
 
-    // ── Step 2: Detect document type ─────────────────────────────────────────
+    // ── Step 2: Combined document analysis (detect type + extract scores in ONE call) ────
+
+    private async Task<(DocumentType Type, ExtractedScores Scores, string RawResponse)> DetectAndExtractAsync(
+        List<string> images,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        var requestBody = new OllamaChatRequest
+        {
+            Model = _modelName,
+            Stream = false,
+            Messages =
+            [
+                new OllamaMessage
+                {
+                    Role = "user",
+                    Content = MajorAdvisorAgentPrompts.CombinedDocumentAnalysis,
+                    Images = images.ToArray()
+                }
+            ]
+        };
+
+        var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
+
+        // Debug: Log raw response
+        _logger.LogInformation(
+            "MajorAdvisorAgent: Raw Ollama response (first 1000 chars): {Response}",
+            responseBody.Length > 1000 ? responseBody[..1000] : responseBody);
+
+        var ollamaResponse = ParseOllamaResponse<OllamaCombinedAnalysisResponse>(responseBody, fileName);
+
+        // Parse document type
+        var docType = ollamaResponse.DocumentType?.ToLowerInvariant() switch
+        {
+            "transcript" => DocumentType.Transcript,
+            "competency_test" => DocumentType.CompetencyTest,
+            "schoolrank" => DocumentType.SchoolRank,
+            _ => DocumentType.Unknown
+        };
+
+        _logger.LogInformation(
+            "MajorAdvisorAgent: Document analyzed as '{Type}' (confidence: {Confidence:F2})",
+            docType, ollamaResponse.Confidence);
+
+        // Debug: Log extracted data availability
+        _logger.LogInformation(
+            "MajorAdvisorAgent: ExtractedData availability - Transcript: {HasTranscript}, Competency: {HasCompetency}, SchoolRank: {HasSchoolRank}",
+            ollamaResponse.ExtractedData?.Transcript != null,
+            ollamaResponse.ExtractedData?.Competency != null,
+            ollamaResponse.ExtractedData?.SchoolRank != null);
+
+        // Parse extracted data based on document type
+        var scores = new ExtractedScores();
+
+        if (docType == DocumentType.Transcript && ollamaResponse.ExtractedData?.Transcript != null)
+        {
+            var transcript = ollamaResponse.ExtractedData.Transcript;
+            scores.Transcript = new TranscriptData
+            {
+                Grade11_Toan = transcript.Grade11?.Toan,
+                Grade11_NguVan = transcript.Grade11?.NguVan,
+                Grade11_NgoaiNgu = transcript.Grade11?.NgoaiNgu,
+                Grade11_VatLy = transcript.Grade11?.VatLy,
+                Grade11_HoaHoc = transcript.Grade11?.HoaHoc,
+                Grade11_SinhHoc = transcript.Grade11?.SinhHoc,
+                Grade11_LichSu = transcript.Grade11?.LichSu,
+                Grade11_DiaLy = transcript.Grade11?.DiaLy,
+                Grade11_GDCD = transcript.Grade11?.GDCD,
+                Grade12_Toan = transcript.Grade12?.Toan,
+                Grade12_NguVan = transcript.Grade12?.NguVan,
+                Grade12_NgoaiNgu = transcript.Grade12?.NgoaiNgu,
+                Grade12_VatLy = transcript.Grade12?.VatLy,
+                Grade12_HoaHoc = transcript.Grade12?.HoaHoc,
+                Grade12_SinhHoc = transcript.Grade12?.SinhHoc,
+                Grade12_LichSu = transcript.Grade12?.LichSu,
+                Grade12_DiaLy = transcript.Grade12?.DiaLy,
+                Grade12_GDCD = transcript.Grade12?.GDCD
+            };
+        }
+        else if (docType == DocumentType.CompetencyTest && ollamaResponse.ExtractedData?.Competency != null)
+        {
+            var competency = ollamaResponse.ExtractedData.Competency;
+
+            _logger.LogInformation(
+                "MajorAdvisorAgent: Competency data - Success: {Success}, TotalScore: {TotalScore}, TiengViet: {TiengViet}, TiengAnh: {TiengAnh}, ToanHoc: {ToanHoc}, TuDuyKhoaHoc: {TuDuyKhoaHoc}",
+                competency.Success,
+                competency.TotalScore,
+                competency.TiengViet,
+                competency.TiengAnh,
+                competency.ToanHoc,
+                competency.TuDuyKhoaHoc);
+
+            scores.Competency = new CompetencyData
+            {
+                TotalScore = competency.TotalScore,
+                TiengViet = competency.TiengViet,
+                TiengAnh = competency.TiengAnh,
+                ToanHoc = competency.ToanHoc,
+                TuDuyKhoaHoc = competency.TuDuyKhoaHoc,
+                PercentileRange = competency.PercentileRange
+            };
+        }
+        else if (docType == DocumentType.SchoolRank && ollamaResponse.ExtractedData?.SchoolRank != null)
+        {
+            var schoolrank = ollamaResponse.ExtractedData.SchoolRank;
+            scores.SchoolRank = new SchoolRankData
+            {
+                Rank = schoolrank.Rank,
+                Grade12Score = schoolrank.Grade12Score,
+                StudentName = schoolrank.StudentName,
+                SchoolName = schoolrank.SchoolName,
+                Year = schoolrank.Year
+            };
+        }
+
+        return (docType, scores, responseBody);
+    }
+
+    // ── Legacy methods (kept for reference but not called) ────────────────────────
 
     private async Task<(DocumentTypeResult Result, string RawResponse)> DetectDocumentTypeAsync(
         string imageBase64,
@@ -260,7 +381,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         return (result, responseBody);
     }
 
-    // ── Step 3: Extract scores ────────────────────────────────────────────────
+    // ── Legacy: Extract scores ────────────────────────────────────────────────
 
     private async Task<(ExtractedScores Scores, string RawResponse)> ExtractScoresAsync(
         List<string> images,
@@ -435,21 +556,48 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         return data;
     }
 
-    // ── Step 4: Load programs from database ─────────────────────────────────────
+    // ── Step 4: Load programs from database (with caching) ─────────────────────────
 
     private async Task<List<Program>> LoadProgramsAsync(CancellationToken cancellationToken)
     {
+        // Check cache first
+        if (_cachedPrograms != null && DateTime.UtcNow < _cacheExpiry)
+        {
+            _logger.LogDebug("MajorAdvisorAgent: Using cached programs ({Count} items)", _cachedPrograms.Count);
+            return _cachedPrograms;
+        }
+
+        // Acquire lock to prevent multiple simultaneous DB queries
+        await _cacheLock.WaitAsync(cancellationToken);
+        try
+        {
+            // Double-check after acquiring lock
+            if (_cachedPrograms != null && DateTime.UtcNow < _cacheExpiry)
+            {
+                return _cachedPrograms;
+            }
+
+            // Load from database
         await using var scope = _scopeFactory.CreateAsyncScope();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
         var programs = await unitOfWork.Programs.GetAllAsync();
         var activePrograms = programs.Where(p => p.IsActive == true).ToList();
 
+            // Update cache
+            _cachedPrograms = activePrograms;
+            _cacheExpiry = DateTime.UtcNow.Add(_cacheLifetime);
+
         _logger.LogInformation(
-            "MajorAdvisorAgent: Loaded {Count} active programs from database (will filter by relevance before LLM)",
-            activePrograms.Count);
+                "MajorAdvisorAgent: Loaded {Count} active programs from database (cached for {Minutes} minutes)",
+                activePrograms.Count, _cacheLifetime.TotalMinutes);
 
         return activePrograms;
+    }
+        finally
+        {
+            _cacheLock.Release();
+        }
     }
 
     // ── Helper: Filter relevant programs based on scores ───────────────────────
@@ -846,45 +994,97 @@ internal sealed class OllamaDocTypeResponse
 
 internal sealed class OllamaTranscriptResponse
 {
+    [JsonPropertyName("success")]
     public bool Success { get; set; }
+
+    [JsonPropertyName("grade_11")]
     public TranscriptGrades? Grade11 { get; set; }
+
+    [JsonPropertyName("grade_12")]
     public TranscriptGrades? Grade12 { get; set; }
+
+    [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }
 }
 
 internal sealed class TranscriptGrades
 {
+    [JsonPropertyName("toan")]
     public decimal? Toan { get; set; }
+
+    [JsonPropertyName("ngu_van")]
     public decimal? NguVan { get; set; }
+
+    [JsonPropertyName("ngoai_ngu")]
     public decimal? NgoaiNgu { get; set; }
+
+    [JsonPropertyName("vat_ly")]
     public decimal? VatLy { get; set; }
+
+    [JsonPropertyName("hoa_hoc")]
     public decimal? HoaHoc { get; set; }
+
+    [JsonPropertyName("sinh_hoc")]
     public decimal? SinhHoc { get; set; }
+
+    [JsonPropertyName("lich_su")]
     public decimal? LichSu { get; set; }
+
+    [JsonPropertyName("dia_ly")]
     public decimal? DiaLy { get; set; }
+
+    [JsonPropertyName("gdcd")]
     public decimal? GDCD { get; set; }
 }
 
 internal sealed class OllamaCompetencyResponse
 {
+    [JsonPropertyName("success")]
     public bool Success { get; set; }
+
+    [JsonPropertyName("total_score")]
     public decimal? TotalScore { get; set; }
+
+    [JsonPropertyName("tieng_viet")]
     public decimal? TiengViet { get; set; }
+
+    [JsonPropertyName("tieng_anh")]
     public decimal? TiengAnh { get; set; }
+
+    [JsonPropertyName("toan_hoc")]
     public decimal? ToanHoc { get; set; }
+
+    [JsonPropertyName("tu_duy_khoa_hoc")]
     public decimal? TuDuyKhoaHoc { get; set; }
+
+    [JsonPropertyName("percentile_range")]
     public string? PercentileRange { get; set; }
+
+    [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }
 }
 
 internal sealed class OllamaSchoolRankResponse
 {
+    [JsonPropertyName("success")]
     public bool Success { get; set; }
+
+    [JsonPropertyName("rank")]
     public int? Rank { get; set; }
+
+    [JsonPropertyName("grade_12_score")]
     public decimal? Grade12Score { get; set; }
+
+    [JsonPropertyName("student_name")]
     public string? StudentName { get; set; }
+
+    [JsonPropertyName("school_name")]
     public string? SchoolName { get; set; }
+
+    [JsonPropertyName("year")]
     public int? Year { get; set; }
+
+    [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }
 }
 
@@ -901,5 +1101,31 @@ internal sealed class OllamaProgramRecommendationResponse
     public List<string> Strengths { get; set; } = new();
     public List<string> Concerns { get; set; } = new();
     public string AdmissionMethod { get; set; } = string.Empty;
+}
+
+// ── Combined Analysis Response Model (NEW) ────────────────────────────────────
+
+internal sealed class OllamaCombinedAnalysisResponse
+{
+    [JsonPropertyName("document_type")]
+    public string? DocumentType { get; set; }
+
+    [JsonPropertyName("confidence")]
+    public decimal Confidence { get; set; }
+
+    [JsonPropertyName("extracted_data")]
+    public ExtractedDataWrapper? ExtractedData { get; set; }
+}
+
+internal sealed class ExtractedDataWrapper
+{
+    [JsonPropertyName("transcript")]
+    public OllamaTranscriptResponse? Transcript { get; set; }
+
+    [JsonPropertyName("competency")]
+    public OllamaCompetencyResponse? Competency { get; set; }
+
+    [JsonPropertyName("schoolrank")]
+    public OllamaSchoolRankResponse? SchoolRank { get; set; }
 }
 
