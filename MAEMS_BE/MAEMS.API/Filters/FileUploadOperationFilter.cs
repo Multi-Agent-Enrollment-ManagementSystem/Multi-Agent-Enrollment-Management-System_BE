@@ -3,10 +3,14 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace MAEMS.API.Filters;
 
+/// <summary>
+/// Swagger filter to handle file upload endpoints with [Consumes("multipart/form-data")]
+/// </summary>
 public class FileUploadOperationFilter : IOperationFilter
 {
     public void Apply(OpenApiOperation operation, OperationFilterContext context)
     {
+        // Check if any parameter has IFormFile or IFormFile[]
         var formFileParameters = context.MethodInfo.GetParameters()
             .Where(p => p.ParameterType == typeof(IFormFile) || 
                        p.ParameterType == typeof(IFormFile[]) ||
@@ -15,6 +19,7 @@ public class FileUploadOperationFilter : IOperationFilter
 
         if (!formFileParameters.Any()) return;
 
+        // Simple approach: just mark File property as binary
         operation.RequestBody = new OpenApiRequestBody
         {
             Content = new Dictionary<string, OpenApiMediaType>
@@ -26,8 +31,14 @@ public class FileUploadOperationFilter : IOperationFilter
                         Type = "object",
                         Properties = new Dictionary<string, OpenApiSchema>
                         {
-                            ["File"] = new OpenApiSchema { Type = "string", Format = "binary" }
-                        }
+                            ["File"] = new OpenApiSchema
+                            {
+                                Type = "string",
+                                Format = "binary",
+                                Description = "File to upload"
+                            }
+                        },
+                        Required = new HashSet<string> { "File" }
                     }
                 }
             }
