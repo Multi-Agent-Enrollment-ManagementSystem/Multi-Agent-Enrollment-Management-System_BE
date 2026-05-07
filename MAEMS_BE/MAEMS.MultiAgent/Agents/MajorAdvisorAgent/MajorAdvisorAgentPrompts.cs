@@ -6,7 +6,107 @@ namespace MAEMS.MultiAgent.Agents;
 internal static class MajorAdvisorAgentPrompts
 {
     /// <summary>
-    /// Step 1: Detect document type (transcript vs competency test vs schoolrank)
+    /// Combined: Detect document type AND extract scores in ONE call (performance optimization)
+    /// </summary>
+    internal const string CombinedDocumentAnalysis =
+        """
+        You are a Vietnamese Academic Document Analyzer AI.
+
+        Analyze the provided image(s) to:
+        1. Determine the document type
+        2. Extract all relevant scores
+
+        ## Document Types:
+        - "transcript" - Học bạ THPT (grade report with subject scores for grades 10/11/12)
+        - "competency_test" - Kết quả thi ĐGNL (competency test with Tiếng Việt, Tiếng Anh, Toán học, Tư duy khoa học)
+        - "schoolrank" - Chứng nhận SchoolRank FPT (certificate with Top rank, Grade 12 score, student name)
+        - "unknown" - Cannot determine or not one of the above
+
+        ## Extraction Instructions:
+
+        ### IF TRANSCRIPT (Học bạ THPT):
+        Extract subject scores for grade 11 (Lớp 11) and grade 12 (Lớp 12 / HK1 12):
+        - Toán (Mathematics)
+        - Ngữ Văn / Văn (Literature)
+        - Ngoại Ngữ / Tiếng Anh (English)
+        - Vật Lý (Physics)
+        - Hóa học (Chemistry)
+        - Sinh học (Biology)
+        - Lịch sử (History)
+        - Địa lý (Geography)
+        - GDCD (Civic Education)
+
+        ### IF COMPETENCY_TEST (ĐGNL):
+        Extract:
+        - Total score (Tổng điểm / out of 1200)
+        - Tiếng Việt (Vietnamese / out of 300)
+        - Tiếng Anh (English / out of 300)
+        - Toán học (Math / out of 300)
+        - Tư duy khoa học (Scientific Reasoning / out of 300)
+
+        ### IF SCHOOLRANK:
+        Extract:
+        - Rank position (e.g., "Top55" → 55)
+        - Grade 12 score (Điểm Lớp 12 HK1, combined score out of 30)
+        - Student name (if visible)
+        - School name (if visible)
+        - Year (if visible)
+
+        ## Output Format:
+
+        Return ONLY a JSON object (no markdown, no extra text):
+
+        ```json
+        {
+          "document_type": "transcript",
+          "confidence": 0.95,
+          "extracted_data": {
+            // FOR TRANSCRIPT:
+            "transcript": {
+              "success": true,
+              "grade_11": {
+                "toan": 8.5,
+                "ngu_van": 7.0,
+                "ngoai_ngu": 8.0,
+                // ... other subjects
+              },
+              "grade_12": {
+                "toan": 9.0,
+                "ngu_van": 7.5,
+                // ... other subjects
+              }
+            },
+            // OR FOR COMPETENCY_TEST:
+            "competency": {
+              "success": true,
+              "total_score": 876,
+              "tieng_viet": 240,
+              "tieng_anh": 210,
+              "toan_hoc": 228,
+              "tu_duy_khoa_hoc": 198
+            },
+            // OR FOR SCHOOLRANK:
+            "schoolrank": {
+              "success": true,
+              "rank": 55,
+              "grade_12_score": 26.8,
+              "student_name": "Nguyen Van A",
+              "school_name": "THPT X",
+              "year": 2024
+            }
+          }
+        }
+        ```
+
+        Rules:
+        - Return null for missing scores
+        - Set success=false if extraction fails
+        - Use snake_case for all field names
+        - Only include the relevant section (transcript OR competency OR schoolrank)
+        """;
+
+    /// <summary>
+    /// Legacy prompt - kept for reference but not used (replaced by CombinedDocumentAnalysis)
     /// </summary>
     internal const string DocumentTypeDetection =
         """
@@ -31,7 +131,7 @@ internal static class MajorAdvisorAgentPrompts
         """;
 
     /// <summary>
-    /// Step 2a: Extract scores from high school transcript (Học bạ THPT)
+    /// Legacy prompt - Step 2a: Extract scores from high school transcript (Học bạ THPT)
     /// </summary>
     internal const string TranscriptScoreExtraction =
         """
