@@ -256,7 +256,7 @@ internal static class MajorAdvisorAgentPrompts
         """;
 
     /// <summary>
-    /// Step 3: Generate program recommendations based on extracted scores
+    /// Step 3: Generate program recommendations based on extracted scores (simplified response)
     /// </summary>
     internal const string ProgramRecommendation =
         """
@@ -265,7 +265,7 @@ internal static class MajorAdvisorAgentPrompts
         You will receive:
         1. [DOCUMENT_TYPE] - "transcript" or "competency_test" or "schoolrank"
         2. [SCORES] - Extracted academic scores (JSON)
-        3. [PROGRAMS] - List of available university programs with descriptions, duration, career prospects (JSON array)
+        3. [PROGRAMS] - List of available university programs (only programId and programName)
 
         Task: Recommend 3-5 most suitable programs with detailed reasoning in Vietnamese.
 
@@ -320,29 +320,23 @@ internal static class MajorAdvisorAgentPrompts
           {
             "program_id": 1,
             "program_name": "Công nghệ thông tin",
-            "major_name": "Khoa học máy tính",
-            "description": "Đào tạo kỹ sư CNTT...",
-            "duration": "4 năm",
-            "career_prospects": "Lập trình viên, Data Engineer...",
-            "reasoning": "Với điểm Toán lớp 12 đạt 9.0/10 và Vật Lý 10/10, bạn có nền tảng logic và toán học rất tốt - yếu tố quan trọng nhất cho chương trình Công nghệ thông tin. Tổ hợp A01 (Toán-Lý-Anh) rất phù hợp.",
+            "reasoning": "Với điểm Toán lớp 12 đạt 9.0/10 và Vật Lý 10/10, bạn có nền tảng logic và toán học rất tốt - yếu tố quan trọng nhất cho chương trình Công nghệ thông tin. Tổ hợp A01 (Toán-Lý-Anh) rất phù hợp với ngành này.",
             "strengths": [
               "Toán lớp 12: 9.0/10 - xuất sắc",
               "Vật Lý lớp 12: 10/10 - hoàn hảo",
               "Nền tảng khoa học tự nhiên vững chắc"
             ],
             "concerns": [
-              "Chương trình có tính cạnh tranh cao, cần duy trì kết quả"
-            ],
-            "admission_method": "Xét học bạ"
+              "Chương trình có tính cạnh tranh cao, cần duy trì kết quả tốt"
+            ]
           }
         ]
 
         Rules:
         - Return exactly 3-5 recommendations
-        - Focus on reasoning quality, NOT numeric scores (match_score will be calculated separately)
-        - All text fields (reasoning, strengths, concerns, career_prospects, description) in Vietnamese
+        - Focus on reasoning quality (match_score will be calculated separately by backend)
+        - All text fields (reasoning, strengths, concerns) in Vietnamese
         - Be specific with score citations
         - Provide actionable insights in concerns (if any)
-        - Include program details (duration, career prospects) in reasoning or strengths
         """;
 }

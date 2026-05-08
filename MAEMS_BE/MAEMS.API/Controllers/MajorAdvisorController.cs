@@ -75,7 +75,7 @@ public class MajorAdvisorController : ControllerBase
 
             if (result.Result != "passed")
             {
-                return BadRequest(new { error = result.ErrorMessage });
+                return BadRequest(new { error = result.Summary ?? "Không thể phân tích tài liệu." });
             }
 
             return Ok(result);

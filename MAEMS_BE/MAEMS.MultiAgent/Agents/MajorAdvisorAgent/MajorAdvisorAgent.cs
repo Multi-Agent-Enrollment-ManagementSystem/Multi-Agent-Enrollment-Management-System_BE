@@ -73,7 +73,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
     {
         var result = new MajorAdvisorResult
         {
-            RawOllamaResponses = new Dictionary<string, string>()
+            Result = "failed",
+            Status = "llm_response"
         };
 
         try
@@ -86,30 +87,35 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             var images = await PrepareImagesAsync(file, cancellationToken);
 
             // Step 2: Detect document type AND extract scores in one call (performance optimization)
-            var (docType, scores, combinedRaw) = await DetectAndExtractAsync(images, file.FileName, cancellationToken);
-            result.DetectedDocumentType = docType;
-            result.Scores = scores;
-            result.RawOllamaResponses["document_analysis"] = combinedRaw;
+            var (docType, scores, _) = await DetectAndExtractAsync(images, file.FileName, cancellationToken);
 
             if (docType == DocumentType.Unknown)
             {
-                result.Result = "failed";
-                result.ErrorMessage = "Không thể xác định loại tài liệu. Vui lòng tải lên học bạ THPT hoặc kết quả thi ĐGNL.";
+                result.Summary = "Không thể xác định loại tài liệu. Vui lòng tải lên học bạ THPT, kết quả thi ĐGNL, hoặc chứng nhận SchoolRank.";
                 return result;
             }
 
-            // Step 3: Search relevant programs using Qdrant vector search (replaces LoadProgramsAsync + FilterRelevantPrograms)
+            // Set detected document type and scores
+            result.DetectedDocumentType = docType switch
+            {
+                DocumentType.Transcript => "transcript",
+                DocumentType.CompetencyTest => "competency_test",
+                DocumentType.SchoolRank => "schoolrank",
+                _ => "unknown"
+            };
+            result.Scores = scores;
+
+            // Step 3: Search relevant programs using Qdrant vector search
             var relevantPrograms = await SearchRelevantProgramsAsync(docType, scores, cancellationToken);
 
             if (relevantPrograms.Count == 0)
             {
-                result.Result = "failed";
-                result.ErrorMessage = "Không tìm thấy chương trình phù hợp với điểm số của bạn.";
+                result.Summary = "Không tìm thấy chương trình phù hợp. Vui lòng thử lại với tài liệu khác.";
                 return result;
             }
 
             // Step 4: Get program recommendations
-            var (recommendations, recommendRaw) = await GetRecommendationsAsync(
+            var (recommendations, _) = await GetRecommendationsAsync(
                 docType,
                 scores,
                 relevantPrograms,
@@ -117,31 +123,30 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 cancellationToken);
 
             result.Recommendations = recommendations;
-            result.RawOllamaResponses["program_recommendation"] = recommendRaw;
             result.Result = "passed";
 
-            // Step 4.5: Build summary for QA
-            var summaryParts = new List<string>
+            // Build summary
+            var topProgram = recommendations.FirstOrDefault();
+            var docTypeStr = docType switch
             {
-                $"Document Type: {docType}",
-                $"Programs Recommended: {recommendations.Count}",
-                $"Top Match: {recommendations.FirstOrDefault()?.ProgramName ?? "N/A"} ({recommendations.FirstOrDefault()?.MatchScore ?? 0}/100)"
+                DocumentType.Transcript => "Học bạ",
+                DocumentType.CompetencyTest => "ĐGNL",
+                DocumentType.SchoolRank => "SchoolRank",
+                _ => "Unknown"
             };
 
-            if (scores.Transcript != null)
+            var summaryParts = new List<string>
             {
-                summaryParts.Add($"GPA: {scores.Transcript.AverageGpa:F2}");
-            }
-            else if (scores.Competency != null)
+                $"Phân tích {docTypeStr} thành công.",
+                $"Tìm thấy {recommendations.Count} chương trình phù hợp."
+            };
+
+            if (topProgram != null)
             {
-                summaryParts.Add($"ĐGNL Score: {scores.Competency.TotalScore}/1200");
-            }
-            else if (scores.SchoolRank != null)
-            {
-                summaryParts.Add($"SchoolRank: Top{scores.SchoolRank.Rank}, Score: {scores.SchoolRank.Grade12Score}");
+                summaryParts.Add($"Gợi ý hàng đầu: {topProgram.ProgramName} (match: {topProgram.MatchScore}/100).");
             }
 
-            result.RawOllamaResponses["summary"] = string.Join(" | ", summaryParts);
+            result.Summary = string.Join(" ", summaryParts);
 
             _logger.LogInformation(
                 "MajorAdvisorAgent: Analysis completed for '{FileName}' - {Count} recommendations generated",
@@ -154,7 +159,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             _logger.LogError(ex, "MajorAdvisorAgent: Error analyzing '{FileName}'", file.FileName);
 
             result.Result = "failed";
-            result.ErrorMessage = $"Lỗi khi phân tích tài liệu: {ex.Message}";
+            result.Summary = $"Lỗi khi phân tích tài liệu: {ex.Message}";
 
             return result;
         }
@@ -630,10 +635,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             studentScores = new Dictionary<string, decimal>();
         }
 
-        // Calculate match scores and enrich with full program details from DB
+        // Calculate match scores and map to simplified DTOs
         var result = recommendations.Select(r =>
         {
-            // Find corresponding program to enrich details
+            // Find corresponding program for name enrichment
             var program = programs.FirstOrDefault(p => p.ProgramId == r.ProgramId);
             var programName = program?.ProgramName ?? r.ProgramName;
 
@@ -649,16 +654,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             {
                 ProgramId = r.ProgramId,
                 ProgramName = programName,
-                MajorName = r.MajorName,
-                // Enrich from DB since LLM only received ProgramId + ProgramName
-                Description = program?.Description ?? r.Description,
-                Duration = program?.Duration ?? r.Duration,
-                CareerProspects = program?.CareerProspects ?? r.CareerProspects,
-                MatchScore = calculatedMatchScore, // Use calculated score
+                MatchScore = calculatedMatchScore,
                 Reasoning = r.Reasoning,
                 Strengths = r.Strengths,
-                Concerns = r.Concerns,
-                AdmissionMethod = r.AdmissionMethod
+                Concerns = r.Concerns
             };
         })
         .OrderByDescending(r => r.MatchScore) // Sort by calculated match score
@@ -855,15 +854,10 @@ internal sealed class OllamaProgramRecommendationResponse
 {
     public int ProgramId { get; set; }
     public string ProgramName { get; set; } = string.Empty;
-    public string? MajorName { get; set; }
-    public string? Description { get; set; }
-    public string? Duration { get; set; }
-    public string? CareerProspects { get; set; }
-    // MatchScore is now calculated in backend, not from LLM
+    // MatchScore is calculated in backend, not from LLM
     public string Reasoning { get; set; } = string.Empty;
     public List<string> Strengths { get; set; } = new();
     public List<string> Concerns { get; set; } = new();
-    public string AdmissionMethod { get; set; } = string.Empty;
 }
 
 // ── Combined Analysis Response Model (NEW) ────────────────────────────────────

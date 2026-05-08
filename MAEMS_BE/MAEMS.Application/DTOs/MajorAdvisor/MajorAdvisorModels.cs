@@ -84,29 +84,22 @@ public sealed class SchoolRankData
 public sealed class MajorAdvisorResult
 {
     public string Result { get; set; } = "failed"; // "passed" | "failed"
-    public string? ErrorMessage { get; set; }
-    public DocumentType DetectedDocumentType { get; set; }
-    public ExtractedScores? Scores { get; set; }
+    public string Status { get; set; } = "llm_response"; // Always "llm_response" for successful analysis
+    public string? DetectedDocumentType { get; set; } // "transcript" | "competency_test" | "schoolrank"
+    public ExtractedScores? Scores { get; set; } // Include extracted scores for AI reasoning transparency
     public List<ProgramRecommendation> Recommendations { get; set; } = new();
-
-    // Raw Ollama responses for QA audit trail
-    public Dictionary<string, string>? RawOllamaResponses { get; set; }
+    public string? Summary { get; set; } // Brief overview of analysis result
 }
 
 /// <summary>
-/// Single program recommendation
+/// Single program recommendation (minimal fields)
 /// </summary>
 public sealed class ProgramRecommendation
 {
     public int ProgramId { get; set; }
     public string ProgramName { get; set; } = string.Empty;
-    public string? MajorName { get; set; }
-    public string? Description { get; set; }
-    public string? Duration { get; set; }
-    public string? CareerProspects { get; set; }
     public int MatchScore { get; set; } // 0-100
     public string Reasoning { get; set; } = string.Empty;
     public List<string> Strengths { get; set; } = new();
     public List<string> Concerns { get; set; } = new();
-    public string AdmissionMethod { get; set; } = string.Empty; // "Xét học bạ" | "Xét ĐGNL"
 }
