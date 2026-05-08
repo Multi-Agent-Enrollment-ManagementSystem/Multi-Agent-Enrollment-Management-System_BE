@@ -6,6 +6,7 @@ using MAEMS.Application.DTOs.MajorAdvisor;
 using MAEMS.Application.Interfaces;
 using MAEMS.Domain.Entities;
 using MAEMS.Domain.Interfaces;
+using MAEMS.MultiAgent.RAG.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,17 +16,16 @@ namespace MAEMS.MultiAgent.Agents;
 
 /// <summary>
 /// Major Advisor Agent - Analyzes academic documents (transcript or competency test)
-/// and recommends suitable university programs. Optimized for speed (no database logging).
+/// and recommends suitable university programs. Now uses OpenAI GPT-4o-mini for faster vision analysis.
 /// </summary>
 public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 {
-    private readonly HttpClient _httpClient;
+    private readonly IOpenAIService _openAIService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MajorAdvisorAgent> _logger;
     private readonly DocumentIntakeAgentPdfConverter _pdfConverter;
-    private readonly string _apiUrl;
-    private readonly string _apiKey;
-    private readonly string _modelName;
+    private readonly IRagVectorStore _vectorStore;
+    private readonly IRagEmbeddingService _embeddingService;
 
     // Static cache for programs (refreshed every 5 minutes)
     private static List<Program>? _cachedPrograms;
@@ -52,22 +52,18 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
     };
 
     public MajorAdvisorAgent(
-        HttpClient httpClient,
+        IOpenAIService openAIService,
         IServiceScopeFactory scopeFactory,
-        IConfiguration configuration,
-        ILogger<MajorAdvisorAgent> logger)
+        ILogger<MajorAdvisorAgent> logger,
+        IRagVectorStore vectorStore,
+        IRagEmbeddingService embeddingService)
     {
-        _httpClient = httpClient;
+        _openAIService = openAIService;
         _scopeFactory = scopeFactory;
         _logger = logger;
         _pdfConverter = new DocumentIntakeAgentPdfConverter(logger);
-
-        _apiUrl = configuration["Ollama:ApiUrl"]
-            ?? throw new InvalidOperationException("Ollama:ApiUrl is not configured");
-        _apiKey = configuration["Ollama:ApiKey"]
-            ?? throw new InvalidOperationException("Ollama:ApiKey is not configured");
-        _modelName = configuration["Ollama:ModelName"]
-            ?? throw new InvalidOperationException("Ollama:ModelName is not configured");
+        _vectorStore = vectorStore;
+        _embeddingService = embeddingService;
     }
 
     /// <inheritdoc />
@@ -79,7 +75,6 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         {
             RawOllamaResponses = new Dictionary<string, string>()
         };
-        var startTime = DateTime.UtcNow;
 
         try
         {
@@ -100,29 +95,16 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             {
                 result.Result = "failed";
                 result.ErrorMessage = "Không thể xác định loại tài liệu. Vui lòng tải lên học bạ THPT hoặc kết quả thi ĐGNL.";
-                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
-            // Step 3: Load programs from database (cached)
-            var programs = await LoadProgramsAsync(cancellationToken);
-
-            if (programs.Count == 0)
-            {
-                result.Result = "failed";
-                result.ErrorMessage = "Không tìm thấy danh sách chương trình đào tạo trong hệ thống.";
-                await LogToAgentLogAsync(result, startTime, cancellationToken);
-                return result;
-            }
-
-            // Step 3.5: Filter relevant programs based on scores
-            var relevantPrograms = FilterRelevantPrograms(programs, docType, scores);
+            // Step 3: Search relevant programs using Qdrant vector search (replaces LoadProgramsAsync + FilterRelevantPrograms)
+            var relevantPrograms = await SearchRelevantProgramsAsync(docType, scores, cancellationToken);
 
             if (relevantPrograms.Count == 0)
             {
                 result.Result = "failed";
                 result.ErrorMessage = "Không tìm thấy chương trình phù hợp với điểm số của bạn.";
-                await LogToAgentLogAsync(result, startTime, cancellationToken);
                 return result;
             }
 
@@ -165,9 +147,6 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 "MajorAdvisorAgent: Analysis completed for '{FileName}' - {Count} recommendations generated",
                 file.FileName, recommendations.Count);
 
-            // Step 6: Log to AgentLog for QA review
-            await LogToAgentLogAsync(result, startTime, cancellationToken);
-
             return result;
         }
         catch (Exception ex)
@@ -176,8 +155,6 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 
             result.Result = "failed";
             result.ErrorMessage = $"Lỗi khi phân tích tài liệu: {ex.Message}";
-
-            await LogToAgentLogAsync(result, startTime, cancellationToken);
 
             return result;
         }
@@ -224,29 +201,27 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         string fileName,
         CancellationToken cancellationToken)
     {
-        var requestBody = new OllamaChatRequest
-        {
-            Model = _modelName,
-            Stream = false,
-            Messages =
-            [
-                new OllamaMessage
-                {
-                    Role = "user",
-                    Content = MajorAdvisorAgentPrompts.CombinedDocumentAnalysis,
-                    Images = images.ToArray()
-                }
-            ]
-        };
+        _logger.LogInformation("MajorAdvisorAgent: Calling OpenAI Vision API for '{FileName}'", fileName);
 
-        var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
+        // Call OpenAI Vision API with reduced token limit for extraction (JSON only)
+        var responseBody = await _openAIService.GetVisionCompletionAsync(
+            systemPrompt: "You are an expert at analyzing Vietnamese academic documents. Extract data accurately in JSON format.",
+            userMessage: MajorAdvisorAgentPrompts.CombinedDocumentAnalysis,
+            base64Images: images,
+            maxTokens: 1200,
+            cancellationToken: cancellationToken);
 
         // Debug: Log raw response
         _logger.LogInformation(
-            "MajorAdvisorAgent: Raw Ollama response (first 1000 chars): {Response}",
+            "MajorAdvisorAgent: Raw OpenAI response (first 1000 chars): {Response}",
             responseBody.Length > 1000 ? responseBody[..1000] : responseBody);
 
-        var ollamaResponse = ParseOllamaResponse<OllamaCombinedAnalysisResponse>(responseBody, fileName);
+        // Parse JSON from response (OpenAI might wrap it in markdown)
+        var jsonContent = ExtractJsonFromResponse(responseBody);
+        var ollamaResponse = JsonSerializer.Deserialize<OllamaCombinedAnalysisResponse>(
+            jsonContent,
+            ResponseDeserializerOptions)
+            ?? throw new InvalidOperationException($"Failed to parse OpenAI response for '{fileName}'");
 
         // Parse document type
         var docType = ollamaResponse.DocumentType?.ToLowerInvariant() switch
@@ -335,413 +310,245 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         return (docType, scores, responseBody);
     }
 
-    // ── Legacy methods (kept for reference but not called) ────────────────────────
 
-    private async Task<(DocumentTypeResult Result, string RawResponse)> DetectDocumentTypeAsync(
-        string imageBase64,
-        string fileName,
-        CancellationToken cancellationToken)
+
+
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // DEPRECATED METHODS - Replaced by Qdrant vector search (SearchRelevantProgramsAsync)
+    // Kept for reference and potential fallback scenarios
+    // ══════════════════════════════════════════════════════════════════════════════
+
+
+
+    // ── Helper: Build semantic query from student scores ─────────────────────────
+
+    private string BuildSemanticQueryFromScores(DocumentType docType, ExtractedScores scores)
     {
-        var requestBody = new OllamaChatRequest
-        {
-            Model = _modelName,
-            Stream = false,
-            Messages =
-            [
-                new OllamaMessage
-                {
-                    Role = "user",
-                    Content = MajorAdvisorAgentPrompts.DocumentTypeDetection,
-                    Images = [imageBase64]
-                }
-            ]
-        };
+        var queryParts = new List<string>();
 
-        var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-        var ollamaResponse = ParseOllamaResponse<OllamaDocTypeResponse>(responseBody, fileName);
-
-        var docType = ollamaResponse.Type.ToLowerInvariant() switch
-        {
-            "transcript" => DocumentType.Transcript,
-            "competency_test" => DocumentType.CompetencyTest,
-            "schoolrank" => DocumentType.SchoolRank,
-            _ => DocumentType.Unknown
-        };
-
-        _logger.LogInformation(
-            "MajorAdvisorAgent: Document type detected as '{Type}' (confidence: {Confidence:F2})",
-            docType, ollamaResponse.Confidence);
-
-        var result = new DocumentTypeResult
-        {
-            Type = docType,
-            Confidence = ollamaResponse.Confidence
-        };
-
-        return (result, responseBody);
-    }
-
-    // ── Legacy: Extract scores ────────────────────────────────────────────────
-
-    private async Task<(ExtractedScores Scores, string RawResponse)> ExtractScoresAsync(
-        List<string> images,
-        DocumentType docType,
-        string fileName,
-        CancellationToken cancellationToken)
-    {
-        var scores = new ExtractedScores();
-        string rawResponse;
-
-        if (docType == DocumentType.Transcript)
-        {
-            var requestBody = new OllamaChatRequest
-            {
-                Model = _modelName,
-                Stream = false,
-                Messages =
-                [
-                    new OllamaMessage
-                    {
-                        Role = "user",
-                        Content = MajorAdvisorAgentPrompts.TranscriptScoreExtraction,
-                        Images = images
-                    }
-                ]
-            };
-
-            rawResponse = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-            var ollamaResponse = ParseOllamaResponse<OllamaTranscriptResponse>(rawResponse, fileName);
-
-            if (!ollamaResponse.Success)
-            {
-                throw new InvalidOperationException($"Không thể đọc điểm từ học bạ: {ollamaResponse.ErrorMessage}");
-            }
-
-            scores.Transcript = MapTranscriptScores(ollamaResponse);
-        }
-        else if (docType == DocumentType.CompetencyTest)
-        {
-            var requestBody = new OllamaChatRequest
-            {
-                Model = _modelName,
-                Stream = false,
-                Messages =
-                [
-                    new OllamaMessage
-                    {
-                        Role = "user",
-                        Content = MajorAdvisorAgentPrompts.CompetencyScoreExtraction,
-                        Images = images
-                    }
-                ]
-            };
-
-            rawResponse = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-            var ollamaResponse = ParseOllamaResponse<OllamaCompetencyResponse>(rawResponse, fileName);
-
-            if (!ollamaResponse.Success)
-            {
-                throw new InvalidOperationException($"Không thể đọc điểm từ kết quả ĐGNL: {ollamaResponse.ErrorMessage}");
-            }
-
-            scores.Competency = new CompetencyData
-            {
-                TotalScore = ollamaResponse.TotalScore,
-                TiengViet = ollamaResponse.TiengViet,
-                TiengAnh = ollamaResponse.TiengAnh,
-                ToanHoc = ollamaResponse.ToanHoc,
-                TuDuyKhoaHoc = ollamaResponse.TuDuyKhoaHoc,
-                PercentileRange = ollamaResponse.PercentileRange
-            };
-        }
-        else if (docType == DocumentType.SchoolRank)
-        {
-            var requestBody = new OllamaChatRequest
-            {
-                Model = _modelName,
-                Stream = false,
-                Messages =
-                [
-                    new OllamaMessage
-                    {
-                        Role = "user",
-                        Content = MajorAdvisorAgentPrompts.SchoolRankScoreExtraction,
-                        Images = images
-                    }
-                ]
-            };
-
-            rawResponse = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-            var ollamaResponse = ParseOllamaResponse<OllamaSchoolRankResponse>(rawResponse, fileName);
-
-            if (!ollamaResponse.Success)
-            {
-                throw new InvalidOperationException($"Không thể đọc thông tin từ chứng nhận SchoolRank: {ollamaResponse.ErrorMessage}");
-            }
-
-            scores.SchoolRank = new SchoolRankData
-            {
-                Rank = ollamaResponse.Rank,
-                Grade12Score = ollamaResponse.Grade12Score,
-                StudentName = ollamaResponse.StudentName,
-                SchoolName = ollamaResponse.SchoolName,
-                Year = ollamaResponse.Year
-            };
-        }
-        else
-        {
-            rawResponse = "{}"; // Unknown document type
-        }
-
-        return (scores, rawResponse);
-    }
-
-    private TranscriptData MapTranscriptScores(OllamaTranscriptResponse response)
-    {
-        var data = new TranscriptData();
-
-        if (response.Grade11 != null)
-        {
-            data.Grade11_Toan = response.Grade11.Toan;
-            data.Grade11_NguVan = response.Grade11.NguVan;
-            data.Grade11_NgoaiNgu = response.Grade11.NgoaiNgu;
-            data.Grade11_VatLy = response.Grade11.VatLy;
-            data.Grade11_HoaHoc = response.Grade11.HoaHoc;
-            data.Grade11_SinhHoc = response.Grade11.SinhHoc;
-            data.Grade11_LichSu = response.Grade11.LichSu;
-            data.Grade11_DiaLy = response.Grade11.DiaLy;
-            data.Grade11_GDCD = response.Grade11.GDCD;
-        }
-
-        if (response.Grade12 != null)
-        {
-            data.Grade12_Toan = response.Grade12.Toan;
-            data.Grade12_NguVan = response.Grade12.NguVan;
-            data.Grade12_NgoaiNgu = response.Grade12.NgoaiNgu;
-            data.Grade12_VatLy = response.Grade12.VatLy;
-            data.Grade12_HoaHoc = response.Grade12.HoaHoc;
-            data.Grade12_SinhHoc = response.Grade12.SinhHoc;
-            data.Grade12_LichSu = response.Grade12.LichSu;
-            data.Grade12_DiaLy = response.Grade12.DiaLy;
-            data.Grade12_GDCD = response.Grade12.GDCD;
-        }
-
-        // Calculate average GPA
-        var allScores = new List<decimal?>();
-        if (response.Grade11 != null)
-        {
-            allScores.AddRange(new[]
-            {
-                response.Grade11.Toan, response.Grade11.NguVan, response.Grade11.NgoaiNgu,
-                response.Grade11.VatLy, response.Grade11.HoaHoc, response.Grade11.SinhHoc,
-                response.Grade11.LichSu, response.Grade11.DiaLy, response.Grade11.GDCD
-            });
-        }
-        if (response.Grade12 != null)
-        {
-            allScores.AddRange(new[]
-            {
-                response.Grade12.Toan, response.Grade12.NguVan, response.Grade12.NgoaiNgu,
-                response.Grade12.VatLy, response.Grade12.HoaHoc, response.Grade12.SinhHoc,
-                response.Grade12.LichSu, response.Grade12.DiaLy, response.Grade12.GDCD
-            });
-        }
-
-        var validScores = allScores.Where(s => s.HasValue).Select(s => s!.Value).ToList();
-        if (validScores.Any())
-        {
-            data.AverageGpa = Math.Round(validScores.Average(), 2);
-        }
-
-        return data;
-    }
-
-    // ── Step 4: Load programs from database (with caching) ─────────────────────────
-
-    private async Task<List<Program>> LoadProgramsAsync(CancellationToken cancellationToken)
-    {
-        // Check cache first
-        if (_cachedPrograms != null && DateTime.UtcNow < _cacheExpiry)
-        {
-            _logger.LogDebug("MajorAdvisorAgent: Using cached programs ({Count} items)", _cachedPrograms.Count);
-            return _cachedPrograms;
-        }
-
-        // Acquire lock to prevent multiple simultaneous DB queries
-        await _cacheLock.WaitAsync(cancellationToken);
-        try
-        {
-            // Double-check after acquiring lock
-            if (_cachedPrograms != null && DateTime.UtcNow < _cacheExpiry)
-            {
-                return _cachedPrograms;
-            }
-
-            // Load from database
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-
-        var programs = await unitOfWork.Programs.GetAllAsync();
-        var activePrograms = programs.Where(p => p.IsActive == true).ToList();
-
-            // Update cache
-            _cachedPrograms = activePrograms;
-            _cacheExpiry = DateTime.UtcNow.Add(_cacheLifetime);
-
-        _logger.LogInformation(
-                "MajorAdvisorAgent: Loaded {Count} active programs from database (cached for {Minutes} minutes)",
-                activePrograms.Count, _cacheLifetime.TotalMinutes);
-
-        return activePrograms;
-    }
-        finally
-        {
-            _cacheLock.Release();
-        }
-    }
-
-    // ── Helper: Filter relevant programs based on scores ───────────────────────
-
-    private List<Program> FilterRelevantPrograms(List<Program> allPrograms, DocumentType docType, ExtractedScores scores)
-    {
-        const int MaxProgramsForLlm = 20; // Limit to prevent LLM overload
-
-        // For competency test: filter by total score threshold
-        if (docType == DocumentType.CompetencyTest && scores.Competency != null)
-        {
-            var totalScore = scores.Competency.TotalScore;
-
-            // Categorize programs by competitiveness (simplified heuristic)
-            var relevantPrograms = allPrograms
-                .Where(p =>
-                {
-                    var name = p.ProgramName?.ToLowerInvariant() ?? "";
-
-                    // High-demand STEM programs need ≥700
-                    if ((name.Contains("công nghệ thông tin") || name.Contains("khoa học máy tính") 
-                        || name.Contains("y") || name.Contains("dược")) 
-                        && totalScore < 700)
-                        return false;
-
-                    // Standard programs accessible at ≥500
-                    if (totalScore < 500)
-                        return false;
-
-                    return true;
-                })
-                .Take(MaxProgramsForLlm)
-                .ToList();
-
-            _logger.LogInformation(
-                "MajorAdvisorAgent: Filtered to {Count} programs for ĐGNL score {Score}",
-                relevantPrograms.Count, totalScore);
-
-            return relevantPrograms;
-        }
-
-        // For transcript: filter by subject strength (simplified - take top programs)
         if (docType == DocumentType.Transcript && scores.Transcript != null)
         {
             var transcript = scores.Transcript;
             var strongSubjects = new List<string>();
+            var avgSubjects = new List<string>();
 
-            // Identify strong subjects (≥8.0)
-            if (transcript.Grade12_Toan >= 8.0m) strongSubjects.Add("Toán");
-            if (transcript.Grade12_VatLy >= 8.0m) strongSubjects.Add("Lý");
-            if (transcript.Grade12_HoaHoc >= 8.0m) strongSubjects.Add("Hóa");
-            if (transcript.Grade12_SinhHoc >= 8.0m) strongSubjects.Add("Sinh");
-            if (transcript.Grade12_NguVan >= 8.0m) strongSubjects.Add("Văn");
-            if (transcript.Grade12_LichSu >= 8.0m) strongSubjects.Add("Sử");
-            if (transcript.Grade12_DiaLy >= 8.0m) strongSubjects.Add("Địa");
-            if (transcript.Grade12_NgoaiNgu >= 8.0m) strongSubjects.Add("Anh");
-
-            // Simple heuristic: if strong in STEM subjects, prioritize STEM programs
-            var hasStem = strongSubjects.Any(s => s == "Toán" || s == "Lý" || s == "Hóa");
-            var hasHumanities = strongSubjects.Any(s => s == "Văn" || s == "Sử" || s == "Địa");
-
-            var relevantPrograms = allPrograms
-                .Where(p =>
-                {
-                    var name = p.ProgramName?.ToLowerInvariant() ?? "";
-
-                    // STEM programs if strong in math/science
-                    if (hasStem && (name.Contains("công nghệ thông tin") || name.Contains("kỹ thuật") 
-                        || name.Contains("công nghệ") || name.Contains("khoa học máy tính")))
-                        return true;
-
-                    // Humanities/Business if strong in language/social
-                    if (hasHumanities && (name.Contains("quản trị") || name.Contains("kinh tế") 
-                        || name.Contains("ngôn ngữ") || name.Contains("du lịch")))
-                        return true;
-
-                    // Include balanced programs for all students
-                    if (name.Contains("quản trị kinh doanh") || name.Contains("marketing"))
-                        return true;
-
-                    return false;
-                })
-                .Take(MaxProgramsForLlm)
-                .ToList();
-
-            // Fallback: if filtering is too aggressive, take top 20 by alphabetical
-            if (relevantPrograms.Count < 10)
+            // Identify strong subjects (≥8.0) and average subjects (7.0-7.9)
+            void CheckSubject(decimal? score, string name)
             {
-                relevantPrograms = allPrograms.Take(MaxProgramsForLlm).ToList();
+                if (score >= 8.0m) strongSubjects.Add(name);
+                else if (score >= 7.0m) avgSubjects.Add(name);
             }
 
-            _logger.LogInformation(
-                "MajorAdvisorAgent: Filtered to {Count} programs for transcript (strong subjects: {Subjects})",
-                relevantPrograms.Count, string.Join(", ", strongSubjects));
+            CheckSubject(transcript.Grade12_Toan, "Toán học");
+            CheckSubject(transcript.Grade12_VatLy, "Vật lý");
+            CheckSubject(transcript.Grade12_HoaHoc, "Hóa học");
+            CheckSubject(transcript.Grade12_SinhHoc, "Sinh học");
+            CheckSubject(transcript.Grade12_NguVan, "Ngữ văn");
+            CheckSubject(transcript.Grade12_LichSu, "Lịch sử");
+            CheckSubject(transcript.Grade12_DiaLy, "Địa lý");
+            CheckSubject(transcript.Grade12_NgoaiNgu, "Tiếng Anh");
 
-            return relevantPrograms;
+            queryParts.Add("Học sinh xuất sắc");
+
+            if (strongSubjects.Count > 0)
+            {
+                queryParts.Add($"giỏi các môn {string.Join(", ", strongSubjects)}");
+            }
+
+            if (avgSubjects.Count > 0)
+            {
+                queryParts.Add($"khá các môn {string.Join(", ", avgSubjects)}");
+            }
+
+            if (transcript.AverageGpa.HasValue)
+            {
+                queryParts.Add($"GPA trung bình {transcript.AverageGpa:F2}");
+            }
+
+            // Infer interest domains
+            var hasStem = strongSubjects.Any(s => s.Contains("Toán") || s.Contains("Vật lý") || s.Contains("Hóa"));
+            var hasBio = strongSubjects.Any(s => s.Contains("Sinh"));
+            var hasHumanities = strongSubjects.Any(s => s.Contains("Ngữ văn") || s.Contains("Lịch sử") || s.Contains("Địa lý"));
+
+            if (hasStem && hasBio)
+            {
+                queryParts.Add("quan tâm ngành khoa học tự nhiên, công nghệ, y dược");
+            }
+            else if (hasStem)
+            {
+                queryParts.Add("quan tâm ngành công nghệ thông tin, kỹ thuật, khoa học máy tính");
+            }
+            else if (hasHumanities)
+            {
+                queryParts.Add("quan tâm ngành kinh tế, quản trị kinh doanh, ngôn ngữ, du lịch");
+            }
         }
-
-        // For SchoolRank: filter by rank and combined score
-        if (docType == DocumentType.SchoolRank && scores.SchoolRank != null)
+        else if (docType == DocumentType.CompetencyTest && scores.Competency != null)
         {
-            var rank = scores.SchoolRank.Rank ?? int.MaxValue;
-            var grade12Score = scores.SchoolRank.Grade12Score ?? 0;
+            var competency = scores.Competency;
 
-            // Top ranks get access to all programs
-            if (rank <= 100)
+            queryParts.Add($"Kết quả thi ĐGNL {competency.TotalScore}/1200");
+
+            if (competency.ToanHoc.HasValue && competency.ToanHoc >= 200)
             {
-                _logger.LogInformation(
-                    "MajorAdvisorAgent: SchoolRank Top{Rank} - all programs accessible",
-                    rank);
-                return allPrograms.Take(MaxProgramsForLlm).ToList();
+                queryParts.Add($"Toán học {competency.ToanHoc}/300 (giỏi)");
             }
 
-            // Filter by combined score for lower ranks
-            var relevantPrograms = allPrograms
-                .Where(p =>
+            if (competency.TuDuyKhoaHoc.HasValue && competency.TuDuyKhoaHoc >= 200)
+            {
+                queryParts.Add($"Tư duy khoa học {competency.TuDuyKhoaHoc}/300 (giỏi)");
+            }
+
+            if (competency.TiengViet.HasValue && competency.TiengViet >= 200)
+            {
+                queryParts.Add($"Tiếng Việt {competency.TiengViet}/300 (giỏi)");
+            }
+
+            if (competency.TiengAnh.HasValue && competency.TiengAnh >= 200)
+            {
+                queryParts.Add($"Tiếng Anh {competency.TiengAnh}/300 (giỏi)");
+            }
+
+            // Infer interest based on highest score
+            var scores_ = new List<(string Subject, decimal? Score)>
+            {
+                ("Toán học và Tư duy khoa học", (competency.ToanHoc ?? 0) + (competency.TuDuyKhoaHoc ?? 0)),
+                ("Tiếng Việt và Tiếng Anh", (competency.TiengViet ?? 0) + (competency.TiengAnh ?? 0))
+            };
+
+            var strongest = scores_.OrderByDescending(s => s.Score).First();
+
+            if (strongest.Subject.Contains("Toán"))
+            {
+                queryParts.Add("quan tâm ngành công nghệ, kỹ thuật, khoa học máy tính");
+            }
+            else
+            {
+                queryParts.Add("quan tâm ngành kinh tế, quản trị, ngôn ngữ, truyền thông");
+            }
+        }
+        else if (docType == DocumentType.SchoolRank && scores.SchoolRank != null)
+        {
+            var schoolrank = scores.SchoolRank;
+
+            queryParts.Add($"Học sinh đạt SchoolRank Top{schoolrank.Rank}");
+
+            if (schoolrank.Grade12Score.HasValue)
+            {
+                queryParts.Add($"Điểm HK1 lớp 12: {schoolrank.Grade12Score}/30");
+            }
+
+            if (schoolrank.Rank <= 50)
+            {
+                queryParts.Add("Học sinh xuất sắc toàn diện, phù hợp các ngành đào tạo chất lượng cao");
+            }
+        }
+
+        var query = string.Join(". ", queryParts);
+
+        _logger.LogInformation(
+            "MajorAdvisorAgent: Built semantic query from {DocType}: '{Query}'",
+            docType, query);
+
+        return query;
+    }
+
+    // ── Helper: Search relevant programs using Qdrant vector search ──────────────
+
+    private async Task<List<Program>> SearchRelevantProgramsAsync(
+        DocumentType docType,
+        ExtractedScores scores,
+        CancellationToken cancellationToken)
+    {
+        const int TopK = 60; // Increased from 20 to provide more diverse program choices
+
+        try
+        {
+            // Step 1: Build semantic query from student scores
+            var semanticQuery = BuildSemanticQueryFromScores(docType, scores);
+
+            // Step 2: Generate embedding for the query
+            var queryEmbedding = await _embeddingService.EmbedTextAsync(semanticQuery, cancellationToken);
+
+            _logger.LogInformation(
+                "MajorAdvisorAgent: Generated query embedding (dimension: {Dimension})",
+                queryEmbedding.Length);
+
+            // Step 3: Search Qdrant for similar programs
+            var searchResults = await _vectorStore.SearchAsync(queryEmbedding, TopK, cancellationToken);
+            var resultList = searchResults.ToList();
+
+            _logger.LogInformation(
+                "MajorAdvisorAgent: Qdrant returned {Count} similar programs",
+                resultList.Count);
+
+            // Step 4: Filter to only program-type documents and extract metadata
+            var programIds = resultList
+                .Where(r => r.Document.Metadata.ContainsKey("type") && r.Document.Metadata["type"] == "program")
+                .Select(r =>
                 {
-                    var name = p.ProgramName?.ToLowerInvariant() ?? "";
-
-                    // High-demand programs need ≥25
-                    if ((name.Contains("công nghệ thông tin") || name.Contains("khoa học máy tính") 
-                        || name.Contains("y") || name.Contains("dược")) 
-                        && grade12Score < 25)
-                        return false;
-
-                    // Standard programs accessible at ≥21
-                    if (grade12Score < 21)
-                        return false;
-
-                    return true;
+                    if (r.Document.Metadata.TryGetValue("program_id", out var idStr) && int.TryParse(idStr, out var id))
+                    {
+                        return (int?)id;
+                    }
+                    return null;
                 })
-                .Take(MaxProgramsForLlm)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToList();
+
+            if (programIds.Count == 0)
+            {
+                _logger.LogWarning("MajorAdvisorAgent: No valid program IDs found in Qdrant results, falling back to database");
+                return await LoadProgramsFromDbFallbackAsync(cancellationToken);
+            }
+
+            // Step 5: Load full Program entities from database by IDs
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+            var programs = await unitOfWork.Programs.GetAllAsync();
+            var relevantPrograms = programs
+                .Where(p => programIds.Contains(p.ProgramId) && p.IsActive == true)
                 .ToList();
 
             _logger.LogInformation(
-                "MajorAdvisorAgent: Filtered to {Count} programs for SchoolRank (Rank: {Rank}, Score: {Score})",
-                relevantPrograms.Count, rank, grade12Score);
+                "MajorAdvisorAgent: Loaded {Count} relevant programs from database via Qdrant search",
+                relevantPrograms.Count);
 
             return relevantPrograms;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "MajorAdvisorAgent: Error during Qdrant search, falling back to database");
 
-        // Fallback: return top N programs
-        return allPrograms.Take(MaxProgramsForLlm).ToList();
+            // Fallback to database-based approach
+            return await LoadProgramsFromDbFallbackAsync(cancellationToken);
+        }
     }
+
+    // ── Fallback: Load programs from database when Qdrant fails ──────────────────
+
+    private async Task<List<Program>> LoadProgramsFromDbFallbackAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogWarning("MajorAdvisorAgent: Using database fallback for program loading");
+
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var programs = await unitOfWork.Programs.GetAllAsync();
+        var activePrograms = programs.Where(p => p.IsActive == true).ToList(); // Load ALL active programs for maximum diversity
+
+        _logger.LogInformation(
+            "MajorAdvisorAgent: Loaded {Count} active programs from database (fallback)",
+            activePrograms.Count);
+
+        return activePrograms;
+    }
+
+
 
     // ── Step 5: Get program recommendations ─────────────────────────────────────
 
@@ -760,13 +567,11 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             _ => "unknown"
         };
         var scoresJson = JsonSerializer.Serialize(scores, ResponseDeserializerOptions);
+        // Send only essential fields to LLM to reduce token count (details enriched later from DB)
         var programsJson = JsonSerializer.Serialize(programs.Select(p => new
         {
             p.ProgramId,
-            p.ProgramName,
-            p.Description,
-            p.Duration,
-            p.CareerProspects
+            p.ProgramName
         }), ResponseDeserializerOptions);
 
         var prompt = $"""
@@ -781,22 +586,22 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             {MajorAdvisorAgentPrompts.ProgramRecommendation}
             """;
 
-        var requestBody = new OllamaChatRequest
-        {
-            Model = _modelName,
-            Stream = false,
-            Messages =
-            [
-                new OllamaMessage
-                {
-                    Role = "user",
-                    Content = prompt
-                }
-            ]
-        };
+        _logger.LogInformation("MajorAdvisorAgent: Calling OpenAI API for program recommendations");
 
-        var responseBody = await CallOllamaAsync(requestBody, fileName, cancellationToken);
-        var recommendations = ParseOllamaResponse<List<OllamaProgramRecommendationResponse>>(responseBody, fileName);
+        // Call OpenAI text completion with reduced token limit (JSON recommendations only)
+        var responseBody = await _openAIService.GetChatCompletionAsync(
+            systemPrompt: "You are an expert academic advisor. Analyze student scores and recommend suitable university programs in JSON format.",
+            userMessage: prompt,
+            conversationHistory: null,
+            maxTokens: 1800,
+            cancellationToken: cancellationToken);
+
+        // Parse JSON from response
+        var jsonContent = ExtractJsonFromResponse(responseBody);
+        var recommendations = JsonSerializer.Deserialize<List<OllamaProgramRecommendationResponse>>(
+            jsonContent,
+            ResponseDeserializerOptions)
+            ?? throw new InvalidOperationException($"Failed to parse OpenAI recommendation response for '{fileName}'");
 
         // Build subject score dictionary for match calculation
         Dictionary<string, decimal> studentScores;
@@ -825,10 +630,10 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             studentScores = new Dictionary<string, decimal>();
         }
 
-        // Calculate match scores and map to DTOs
+        // Calculate match scores and enrich with full program details from DB
         var result = recommendations.Select(r =>
         {
-            // Find corresponding program to get full name for classification
+            // Find corresponding program to enrich details
             var program = programs.FirstOrDefault(p => p.ProgramId == r.ProgramId);
             var programName = program?.ProgramName ?? r.ProgramName;
 
@@ -843,11 +648,12 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             return new ProgramRecommendation
             {
                 ProgramId = r.ProgramId,
-                ProgramName = r.ProgramName,
+                ProgramName = programName,
                 MajorName = r.MajorName,
-                Description = r.Description,
-                Duration = r.Duration,
-                CareerProspects = r.CareerProspects,
+                // Enrich from DB since LLM only received ProgramId + ProgramName
+                Description = program?.Description ?? r.Description,
+                Duration = program?.Duration ?? r.Duration,
+                CareerProspects = program?.CareerProspects ?? r.CareerProspects,
                 MatchScore = calculatedMatchScore, // Use calculated score
                 Reasoning = r.Reasoning,
                 Strengths = r.Strengths,
@@ -861,77 +667,34 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         return (result, responseBody);
     }
 
-    // ── Step 6: Log to AgentLog ───────────────────────────────────────────────
+    // ── Helper: Extract JSON from OpenAI response (handles markdown wrapper) ────
 
-    private async Task LogToAgentLogAsync(
-        MajorAdvisorResult result,
-        DateTime startTime,
-        CancellationToken cancellationToken)
+    private string ExtractJsonFromResponse(string response)
     {
-        try
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-            var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        // OpenAI might wrap JSON in ```json ... ```
+        var trimmed = response.Trim();
 
-            var outputData = JsonSerializer.Serialize(result, new JsonSerializerOptions
+        if (trimmed.StartsWith("```json"))
+        {
+            var startIndex = trimmed.IndexOf('\n') + 1;
+            var endIndex = trimmed.LastIndexOf("```");
+            if (endIndex > startIndex)
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            });
-
-            var log = new AgentLog
+                return trimmed.Substring(startIndex, endIndex - startIndex).Trim();
+            }
+        }
+        else if (trimmed.StartsWith("```"))
+        {
+            var startIndex = trimmed.IndexOf('\n') + 1;
+            var endIndex = trimmed.LastIndexOf("```");
+            if (endIndex > startIndex)
             {
-                ApplicationId = null, // No application - public service
-                DocumentId = null,    // No document entity - file not stored
-                AgentType = "MajorAdvisor",
-                Action = "AnalyzeDocument",
-                Status = "llm_response",
-                OutputData = outputData,
-                CreatedAt = DateTime.Now // Use local time for PostgreSQL timestamp without time zone
-            };
-
-            await unitOfWork.AgentLogs.AddAsync(log);
-            await unitOfWork.SaveChangesAsync();
-
-            var duration = DateTime.UtcNow - startTime;
-            _logger.LogInformation(
-                "MajorAdvisorAgent: Logged to AgentLog (LogId={LogId}, Result={Result}, Duration={Duration}ms)",
-                log.LogId, result.Result, duration.TotalMilliseconds);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "MajorAdvisorAgent: Failed to log to AgentLog");
-            // Don't throw - logging failure shouldn't break the main flow
-        }
-    }
-
-    // ── Helper: Call Ollama API ───────────────────────────────────────────────
-
-    private async Task<string> CallOllamaAsync(
-        OllamaChatRequest requestBody,
-        string fileName,
-        CancellationToken cancellationToken)
-    {
-        var json = JsonSerializer.Serialize(requestBody, RequestSerializerOptions);
-
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _apiUrl);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-        httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogError(
-                "MajorAdvisorAgent: Ollama returned HTTP {StatusCode} for '{FileName}'. Body: {Body}",
-                (int)response.StatusCode, fileName, responseBody);
-
-            throw new HttpRequestException(
-                $"Ollama API error {(int)response.StatusCode}: {responseBody}");
+                return trimmed.Substring(startIndex, endIndex - startIndex).Trim();
+            }
         }
 
-        return responseBody;
+        // No wrapper, return as-is
+        return trimmed;
     }
 
     // ── Helper: Parse Ollama response ─────────────────────────────────────────

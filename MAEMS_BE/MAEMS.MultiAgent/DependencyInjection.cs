@@ -41,11 +41,8 @@ public static class DependencyInjection
         // Uses Application.Interfaces.IChatBoxAgent interface (not the one in MultiAgent.Agents)
         services.AddScoped<IChatBoxAgent, ChatBoxAgent>();
 
-        // MajorAdvisorAgent — analyze academic documents and recommend majors (public service)
-        services.AddHttpClient<IMajorAdvisorAgent, MajorAdvisorAgent>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        });
+        // MajorAdvisorAgent — analyze academic documents and recommend programs (public service, uses OpenAI)
+        services.AddScoped<IMajorAdvisorAgent, MajorAdvisorAgent>();
 
         // Tuition Fee Service - for RAG to answer tuition-related questions
         services.AddScoped<TuitionFeeService>();

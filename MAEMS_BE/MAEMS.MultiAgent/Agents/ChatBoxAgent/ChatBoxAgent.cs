@@ -81,6 +81,7 @@ public sealed class ChatBoxAgent : IChatBoxAgent
                 systemPrompt,
                 userQuery,
                 conversationHistory,
+                maxTokens: null,
                 cancellationToken);
 
             // 6. Save to database

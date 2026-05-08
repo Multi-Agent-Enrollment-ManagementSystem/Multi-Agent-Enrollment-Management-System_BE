@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace MAEMS.Application.Interfaces
 {
     /// <summary>
-    /// OpenAI service interface - CHAT ONLY
+    /// OpenAI service interface - CHAT + VISION
     /// Note: Embeddings still use Gemini (gemini-embedding-001, 3072 dims) to avoid re-indexing
     /// </summary>
     public interface IOpenAIService
@@ -18,6 +18,17 @@ namespace MAEMS.Application.Interfaces
             string systemPrompt,
             string userMessage,
             List<(string role, string content)> conversationHistory = null,
+            int? maxTokens = null,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Get vision completion from OpenAI GPT-4o-mini with images
+        /// </summary>
+        Task<string> GetVisionCompletionAsync(
+            string systemPrompt,
+            string userMessage,
+            List<string> base64Images,
+            int? maxTokens = null,
             CancellationToken cancellationToken = default);
     }
 }
