@@ -44,6 +44,8 @@ public sealed class TranscriptData
     public decimal? Grade11_LichSu { get; set; }
     public decimal? Grade11_DiaLy { get; set; }
     public decimal? Grade11_GDCD { get; set; }
+    public decimal? Grade11_CongNghe { get; set; }    // Technology
+    public decimal? Grade11_TinHoc { get; set; }      // Informatics
 
     // Grade 12 scores
     public decimal? Grade12_Toan { get; set; }
@@ -55,6 +57,8 @@ public sealed class TranscriptData
     public decimal? Grade12_LichSu { get; set; }
     public decimal? Grade12_DiaLy { get; set; }
     public decimal? Grade12_GDCD { get; set; }
+    public decimal? Grade12_CongNghe { get; set; }    // Technology
+    public decimal? Grade12_TinHoc { get; set; }      // Informatics
 
     public decimal? AverageGpa { get; set; }
 }
@@ -98,7 +102,6 @@ public sealed class ProgramRecommendation
 {
     public int ProgramId { get; set; }
     public string ProgramName { get; set; } = string.Empty;
-    public int MatchScore { get; set; } // 0-100
     public string Reasoning { get; set; } = string.Empty;
     public List<string> Strengths { get; set; } = new();
     public List<string> Concerns { get; set; } = new();

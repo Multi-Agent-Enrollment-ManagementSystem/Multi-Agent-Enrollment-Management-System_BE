@@ -143,7 +143,7 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
 
             if (topProgram != null)
             {
-                summaryParts.Add($"Gợi ý hàng đầu: {topProgram.ProgramName} (match: {topProgram.MatchScore}/100).");
+                summaryParts.Add($"Gợi ý hàng đầu: {topProgram.ProgramName}.");
             }
 
             result.Summary = string.Join(" ", summaryParts);
@@ -208,12 +208,12 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
     {
         _logger.LogInformation("MajorAdvisorAgent: Calling OpenAI Vision API for '{FileName}'", fileName);
 
-        // Call OpenAI Vision API with reduced token limit for extraction (JSON only)
+        // Call OpenAI Vision API with increased token limit for detailed OCR extraction
         var responseBody = await _openAIService.GetVisionCompletionAsync(
-            systemPrompt: "You are an expert at analyzing Vietnamese academic documents. Extract data accurately in JSON format.",
+            systemPrompt: "You are an EXPERT at analyzing Vietnamese academic documents with MAXIMUM OCR ACCURACY. Read every number, subject name, and table cell carefully. Extract data with precision in JSON format.",
             userMessage: MajorAdvisorAgentPrompts.CombinedDocumentAnalysis,
             base64Images: images,
-            maxTokens: 1200,
+            maxTokens: 2000, // Increased from 1200 to allow detailed grade table extraction
             cancellationToken: cancellationToken);
 
         // Debug: Log raw response
@@ -229,7 +229,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             ?? throw new InvalidOperationException($"Failed to parse OpenAI response for '{fileName}'");
 
         // Parse document type
-        var docType = ollamaResponse.DocumentType?.ToLowerInvariant() switch
+        var rawDocType = ollamaResponse.DocumentType?.ToLowerInvariant();
+        var docType = rawDocType switch
         {
             "transcript" => DocumentType.Transcript,
             "competency_test" => DocumentType.CompetencyTest,
@@ -238,8 +239,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
         };
 
         _logger.LogInformation(
-            "MajorAdvisorAgent: Document analyzed as '{Type}' (confidence: {Confidence:F2})",
-            docType, ollamaResponse.Confidence);
+            "MajorAdvisorAgent: Document analyzed as '{Type}' (raw: '{RawType}', confidence: {Confidence:F2})",
+            docType, rawDocType, ollamaResponse.Confidence);
 
         // Debug: Log extracted data availability
         _logger.LogInformation(
@@ -265,6 +266,8 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 Grade11_LichSu = transcript.Grade11?.LichSu,
                 Grade11_DiaLy = transcript.Grade11?.DiaLy,
                 Grade11_GDCD = transcript.Grade11?.GDCD,
+                Grade11_CongNghe = transcript.Grade11?.CongNghe,
+                Grade11_TinHoc = transcript.Grade11?.TinHoc,
                 Grade12_Toan = transcript.Grade12?.Toan,
                 Grade12_NguVan = transcript.Grade12?.NguVan,
                 Grade12_NgoaiNgu = transcript.Grade12?.NgoaiNgu,
@@ -273,7 +276,9 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 Grade12_SinhHoc = transcript.Grade12?.SinhHoc,
                 Grade12_LichSu = transcript.Grade12?.LichSu,
                 Grade12_DiaLy = transcript.Grade12?.DiaLy,
-                Grade12_GDCD = transcript.Grade12?.GDCD
+                Grade12_GDCD = transcript.Grade12?.GDCD,
+                Grade12_CongNghe = transcript.Grade12?.CongNghe,
+                Grade12_TinHoc = transcript.Grade12?.TinHoc
             };
         }
         else if (docType == DocumentType.CompetencyTest && ollamaResponse.ExtractedData?.Competency != null)
@@ -310,6 +315,50 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
                 SchoolName = schoolrank.SchoolName,
                 Year = schoolrank.Year
             };
+
+            // CRITICAL: SchoolRank certificates ALWAYS include a full grade table
+            // Extract transcript data for subject-based evaluation (NOT rank-based)
+            // Rank is only used as supplementary credential, NOT for program matching
+            if (ollamaResponse.ExtractedData?.Transcript != null)
+            {
+                var transcript = ollamaResponse.ExtractedData.Transcript;
+                scores.Transcript = new TranscriptData
+                {
+                    Grade11_Toan = transcript.Grade11?.Toan,
+                    Grade11_NguVan = transcript.Grade11?.NguVan,
+                    Grade11_NgoaiNgu = transcript.Grade11?.NgoaiNgu,
+                    Grade11_VatLy = transcript.Grade11?.VatLy,
+                    Grade11_HoaHoc = transcript.Grade11?.HoaHoc,
+                    Grade11_SinhHoc = transcript.Grade11?.SinhHoc,
+                    Grade11_LichSu = transcript.Grade11?.LichSu,
+                    Grade11_DiaLy = transcript.Grade11?.DiaLy,
+                    Grade11_GDCD = transcript.Grade11?.GDCD,
+                    Grade11_CongNghe = transcript.Grade11?.CongNghe,
+                    Grade11_TinHoc = transcript.Grade11?.TinHoc,
+                    Grade12_Toan = transcript.Grade12?.Toan,
+                    Grade12_NguVan = transcript.Grade12?.NguVan,
+                    Grade12_NgoaiNgu = transcript.Grade12?.NgoaiNgu,
+                    Grade12_VatLy = transcript.Grade12?.VatLy,
+                    Grade12_HoaHoc = transcript.Grade12?.HoaHoc,
+                    Grade12_SinhHoc = transcript.Grade12?.SinhHoc,
+                    Grade12_LichSu = transcript.Grade12?.LichSu,
+                    Grade12_DiaLy = transcript.Grade12?.DiaLy,
+                    Grade12_GDCD = transcript.Grade12?.GDCD,
+                    Grade12_CongNghe = transcript.Grade12?.CongNghe,
+                    Grade12_TinHoc = transcript.Grade12?.TinHoc,
+                    AverageGpa = transcript.AverageGpa
+                };
+
+                _logger.LogInformation(
+                    "MajorAdvisorAgent: SchoolRank includes grade table - will evaluate by SUBJECT SCORES (not rank). Extracted {Grade11Count} grade 11 scores and {Grade12Count} grade 12 scores",
+                    new[] { transcript.Grade11?.Toan, transcript.Grade11?.NguVan, transcript.Grade11?.NgoaiNgu }.Count(x => x.HasValue),
+                    new[] { transcript.Grade12?.Toan, transcript.Grade12?.NguVan, transcript.Grade12?.NgoaiNgu }.Count(x => x.HasValue));
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "MajorAdvisorAgent: SchoolRank certificate has NO grade table - cannot perform subject-based evaluation. Consider requesting transcript separately.");
+            }
         }
 
         return (docType, scores, responseBody);
@@ -447,6 +496,54 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             if (schoolrank.Rank <= 50)
             {
                 queryParts.Add("Học sinh xuất sắc toàn diện, phù hợp các ngành đào tạo chất lượng cao");
+            }
+
+            // CRITICAL: If SchoolRank includes transcript data, use subject-based matching
+            if (scores.Transcript != null)
+            {
+                var transcript = scores.Transcript;
+                var strongSubjects = new List<string>();
+
+                void CheckSubject(decimal? score, string name)
+                {
+                    if (score >= 8.0m) strongSubjects.Add(name);
+                }
+
+                CheckSubject(transcript.Grade12_Toan, "Toán học");
+                CheckSubject(transcript.Grade12_VatLy, "Vật lý");
+                CheckSubject(transcript.Grade12_HoaHoc, "Hóa học");
+                CheckSubject(transcript.Grade12_SinhHoc, "Sinh học");
+                CheckSubject(transcript.Grade12_NguVan, "Ngữ văn");
+                CheckSubject(transcript.Grade12_LichSu, "Lịch sử");
+                CheckSubject(transcript.Grade12_DiaLy, "Địa lý");
+                CheckSubject(transcript.Grade12_NgoaiNgu, "Tiếng Anh");
+
+                if (strongSubjects.Count > 0)
+                {
+                    queryParts.Add($"giỏi các môn {string.Join(", ", strongSubjects)}");
+                }
+
+                // Infer interest domains from strong subjects
+                var hasStem = strongSubjects.Any(s => s.Contains("Toán") || s.Contains("Vật lý") || s.Contains("Hóa"));
+                var hasBio = strongSubjects.Any(s => s.Contains("Sinh"));
+                var hasHumanities = strongSubjects.Any(s => s.Contains("Ngữ văn") || s.Contains("Lịch sử") || s.Contains("Địa lý"));
+
+                if (hasStem && hasBio)
+                {
+                    queryParts.Add("quan tâm ngành khoa học tự nhiên, công nghệ, y dược");
+                }
+                else if (hasStem)
+                {
+                    queryParts.Add("quan tâm ngành công nghệ thông tin, kỹ thuật, khoa học máy tính");
+                }
+                else if (hasHumanities)
+                {
+                    queryParts.Add("quan tâm ngành kinh tế, quản trị kinh doanh, ngôn ngữ, du lịch");
+                }
+
+                _logger.LogInformation(
+                    "MajorAdvisorAgent: SchoolRank with transcript - using subject-based query enhancement with {Count} strong subjects",
+                    strongSubjects.Count);
             }
         }
 
@@ -623,45 +720,82 @@ public sealed class MajorAdvisorAgent : IMajorAdvisorAgent
             studentScores = ProgramSubjectMatcher.BuildScoreDictionary(scores.Competency);
             competencyTotalScore = scores.Competency.TotalScore; // Pass ĐGNL total score for bonus
         }
-        else if (docType == DocumentType.SchoolRank && scores.SchoolRank != null)
+        else if (docType == DocumentType.SchoolRank)
         {
-            // SchoolRank doesn't have detailed subject scores, use fallback
-            studentScores = new Dictionary<string, decimal>();
-            schoolRankScore = scores.SchoolRank.Grade12Score;
-            schoolRank = scores.SchoolRank.Rank;
+            // CRITICAL: SchoolRank evaluation is SUBJECT-BASED (like transcript), NOT rank-based
+            // Rank is only used as supplementary credential, not for matching logic
+            if (scores.Transcript != null)
+            {
+                // Evaluate using subject scores (same as transcript)
+                studentScores = ProgramSubjectMatcher.BuildScoreDictionary(scores.Transcript);
+
+                // Store rank metadata for credential mention only (not used in matching calculation)
+                if (scores.SchoolRank != null)
+                {
+                    schoolRank = scores.SchoolRank.Rank;
+                    _logger.LogInformation(
+                        "MajorAdvisorAgent: SchoolRank evaluation using SUBJECT SCORES. Rank {Rank} stored as credential only.",
+                        schoolRank);
+                }
+            }
+            else
+            {
+                // No grade table available - cannot perform subject-based evaluation
+                _logger.LogWarning(
+                    "MajorAdvisorAgent: SchoolRank has NO subject scores - using fallback empty dictionary");
+                studentScores = new Dictionary<string, decimal>();
+
+                if (scores.SchoolRank != null)
+                {
+                    schoolRankScore = scores.SchoolRank.Grade12Score;
+                    schoolRank = scores.SchoolRank.Rank;
+                }
+            }
         }
         else
         {
             studentScores = new Dictionary<string, decimal>();
         }
 
-        // Calculate match scores and map to simplified DTOs
-        var result = recommendations.Select(r =>
-        {
-            // Find corresponding program for name enrichment
-            var program = programs.FirstOrDefault(p => p.ProgramId == r.ProgramId);
-            var programName = program?.ProgramName ?? r.ProgramName;
-
-            // Calculate backend match score with all available performance metrics
-            var calculatedMatchScore = ProgramSubjectMatcher.CalculateMatchScore(
-                studentScores,
-                programName,
-                schoolRankScore,
-                schoolRank,
-                competencyTotalScore);
-
-            return new ProgramRecommendation
+        // Calculate match scores for ordering and map to simplified DTOs
+        var result = recommendations
+            // CRITICAL: Remove duplicates by ProgramId (LLM sometimes returns same program multiple times)
+            .GroupBy(r => r.ProgramId)
+            .Select(g => g.First()) // Take first occurrence of each program
+            .Select(r =>
             {
-                ProgramId = r.ProgramId,
-                ProgramName = programName,
-                MatchScore = calculatedMatchScore,
-                Reasoning = r.Reasoning,
-                Strengths = r.Strengths,
-                Concerns = r.Concerns
-            };
-        })
-        .OrderByDescending(r => r.MatchScore) // Sort by calculated match score
-        .ToList();
+                // Find corresponding program for name enrichment
+                var program = programs.FirstOrDefault(p => p.ProgramId == r.ProgramId);
+                var programName = program?.ProgramName ?? r.ProgramName;
+
+                // Calculate backend match score for internal ordering only
+                var calculatedMatchScore = ProgramSubjectMatcher.CalculateMatchScore(
+                    studentScores,
+                    programName,
+                    schoolRankScore,
+                    schoolRank,
+                    competencyTotalScore);
+
+                return new
+                {
+                    Recommendation = new ProgramRecommendation
+                    {
+                        ProgramId = r.ProgramId,
+                        ProgramName = programName,
+                        Reasoning = r.Reasoning,
+                        Strengths = r.Strengths,
+                        Concerns = r.Concerns
+                    },
+                    MatchScore = calculatedMatchScore // Used only for ordering, not exposed in API
+                };
+            })
+            .OrderByDescending(r => r.MatchScore) // Sort by calculated match score
+            .Select(r => r.Recommendation)
+            .ToList();
+
+        _logger.LogInformation(
+            "MajorAdvisorAgent: Returning {Count} unique program recommendations (duplicates removed)",
+            result.Count);
 
         return (result, responseBody);
     }
@@ -765,6 +899,9 @@ internal sealed class OllamaTranscriptResponse
     [JsonPropertyName("grade_12")]
     public TranscriptGrades? Grade12 { get; set; }
 
+    [JsonPropertyName("average_gpa")]
+    public decimal? AverageGpa { get; set; }
+
     [JsonPropertyName("error_message")]
     public string? ErrorMessage { get; set; }
 }
@@ -797,6 +934,12 @@ internal sealed class TranscriptGrades
 
     [JsonPropertyName("gdcd")]
     public decimal? GDCD { get; set; }
+
+    [JsonPropertyName("cong_nghe")]
+    public decimal? CongNghe { get; set; }
+
+    [JsonPropertyName("tin_hoc")]
+    public decimal? TinHoc { get; set; }
 }
 
 internal sealed class OllamaCompetencyResponse
