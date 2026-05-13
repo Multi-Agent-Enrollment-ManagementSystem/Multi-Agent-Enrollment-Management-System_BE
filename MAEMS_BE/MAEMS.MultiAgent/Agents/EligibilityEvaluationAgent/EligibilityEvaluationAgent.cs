@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using MAEMS.Application.Interfaces;
@@ -17,11 +16,9 @@ namespace MAEMS.MultiAgent.Agents;
 /// </summary>
 public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
 {
-    private readonly HttpClient _httpClient;
+    private readonly IOpenAIService _openAIService;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<EligibilityEvaluationAgent> _logger;
-    private readonly string _apiUrl;
-    private readonly string _apiKey;
     private readonly string _modelName;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -45,23 +42,16 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
     private readonly DocumentIntakeAgentPdfConverter _pdfConverter;
 
     public EligibilityEvaluationAgent(
-        HttpClient httpClient,
+        IOpenAIService openAIService,
         IServiceScopeFactory scopeFactory,
         IConfiguration configuration,
         ILogger<EligibilityEvaluationAgent> logger)
     {
-        _httpClient = httpClient;
+        _openAIService = openAIService;
         _scopeFactory = scopeFactory;
         _logger = logger;
 
         _pdfConverter = new DocumentIntakeAgentPdfConverter(logger);
-
-        _apiUrl = configuration["Ollama:ApiUrl"]
-            ?? throw new InvalidOperationException("Ollama:ApiUrl is not configured");
-        _apiKey = configuration["Ollama:ApiKey"]
-            ?? throw new InvalidOperationException("Ollama:ApiKey is not configured");
-        _modelName = configuration["Ollama:ModelName"]
-            ?? throw new InvalidOperationException("Ollama:ModelName is not configured");
     }
 
     /// <inheritdoc />
@@ -157,6 +147,24 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             });
 
             var eligibilityResult = ParseLlmResponse(responseBody, applicationId);
+
+            // ── Update applicant scores if available ──────────────────────
+            var llmResponseObj = eligibilityResult.RawLlmResponse;
+            if (llmResponseObj != null && application.ApplicantId.HasValue)
+            {
+                var currentScore = await unitOfWork.Scores.GetByApplicantIdAsync(application.ApplicantId.Value);
+                if (currentScore == null)
+                {
+                    currentScore = new MAEMS.Domain.Entities.Score { ApplicantId = application.ApplicantId.Value };
+                    UpdateScoreEntity(currentScore, llmResponseObj);
+                    await unitOfWork.Scores.AddAsync(currentScore);
+                }
+                else
+                {
+                    UpdateScoreEntity(currentScore, llmResponseObj);
+                    await unitOfWork.Scores.UpdateAsync(currentScore);
+                }
+            }
 
             // ── Determine if RequiresReview ───────────────────────────────
             var anyDocRejected = documents.Any(d =>
@@ -267,41 +275,21 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             "Attached are images/pages from submitted certificates (schoolrank/graduation/achievement) for score verification.\n\n" +
             "Please evaluate the applicant's eligibility.";
 
-        var requestBody = new OllamaChatRequest
+        string responseBody;
+        if (evidenceImagesBase64 != null && evidenceImagesBase64.Count > 0)
         {
-            Model = _modelName,
-            Stream = false,
-            Messages =
-            [
-                new OllamaMessage
-                {
-                    Role = "system",
-                    Content = EligibilityEvaluationAgentPrompts.Evaluation
-                },
-                new OllamaMessage
-                {
-                    Role = "user",
-                    Content = userPrompt,
-                    Images = evidenceImagesBase64.Count > 0 ? evidenceImagesBase64 : null
-                }
-            ]
-        };
-
-        var json = JsonSerializer.Serialize(requestBody, SerializerOptions);
-
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _apiUrl);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-        httpRequest.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(httpRequest);
-        var responseBody = await response.Content.ReadAsStringAsync();
-
-        if (!response.IsSuccessStatusCode)
+            responseBody = await _openAIService.GetVisionCompletionAsync(
+                systemPrompt: EligibilityEvaluationAgentPrompts.Evaluation,
+                userMessage: userPrompt,
+                base64Images: evidenceImagesBase64,
+                maxTokens: 2000);
+        }
+        else
         {
-            throw new HttpRequestException(
-                $"Ollama API error {(int)response.StatusCode}: {responseBody}",
-                inner: null,
-                statusCode: response.StatusCode);
+            responseBody = await _openAIService.GetChatCompletionAsync(
+                systemPrompt: EligibilityEvaluationAgentPrompts.Evaluation,
+                userMessage: userPrompt,
+                maxTokens: 2000);
         }
 
         _logger.LogDebug(
@@ -345,7 +333,8 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
 
     private async Task<byte[]> DownloadBytesAsync(string url, string fileName)
     {
-        using var response = await _httpClient.GetAsync(url);
+        using var httpClient = new HttpClient();
+        using var response = await httpClient.GetAsync(url);
 
         if (!response.IsSuccessStatusCode)
             throw new HttpRequestException(
@@ -382,16 +371,7 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
     {
         try
         {
-            var envelope = JsonSerializer.Deserialize<OllamaChatResponse>(responseBody, DeserializerOptions)
-                ?? throw new InvalidOperationException("Ollama response could not be deserialized.");
-
-            var content = envelope.Message?.Content
-                ?? envelope.Choices?.FirstOrDefault()?.Message?.Content;
-
-            if (string.IsNullOrWhiteSpace(content))
-                throw new InvalidOperationException("LLM returned an empty content field.");
-
-            content = StripMarkdownFences(content);
+            var content = StripMarkdownFences(responseBody);
 
             var llmResult = JsonSerializer.Deserialize<LlmEligibilityResponse>(content, DeserializerOptions)
                 ?? throw new InvalidOperationException("LLM inner JSON could not be deserialized.");
@@ -404,7 +384,36 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             {
                 Result  = result,
                 Level   = llmResult.Level,
-                Details = llmResult.Details
+                Details = llmResult.Details,
+                RawLlmResponse = new MAEMS.Application.DTOs.Agent.LlmEligibilityResponseDto
+                {
+                    Result = llmResult.Result,
+                    Level = llmResult.Level,
+                    Details = llmResult.Details,
+                    Hk2Math = llmResult.Hk2Math,
+                    Hk2Literature = llmResult.Hk2Literature,
+                    Hk2ForeignLanguage = llmResult.Hk2ForeignLanguage,
+                    Hk2History = llmResult.Hk2History,
+                    Hk2Physics = llmResult.Hk2Physics,
+                    Hk2Chemistry = llmResult.Hk2Chemistry,
+                    Hk2Biology = llmResult.Hk2Biology,
+                    Hk2Geography = llmResult.Hk2Geography,
+                    Hk2EconomicsLaw = llmResult.Hk2EconomicsLaw,
+                    Hk2Informatics = llmResult.Hk2Informatics,
+                    Hk2Technology = llmResult.Hk2Technology,
+                    ThptMath = llmResult.ThptMath,
+                    ThptLiterature = llmResult.ThptLiterature,
+                    ThptForeignLanguage = llmResult.ThptForeignLanguage,
+                    ThptHistory = llmResult.ThptHistory,
+                    ThptGeography = llmResult.ThptGeography,
+                    ThptPhysics = llmResult.ThptPhysics,
+                    ThptChemistry = llmResult.ThptChemistry,
+                    ThptBiology = llmResult.ThptBiology,
+                    ThptEconomicsLaw = llmResult.ThptEconomicsLaw,
+                    ThptInformatics = llmResult.ThptInformatics,
+                    ThptTechnology = llmResult.ThptTechnology,
+                    Dgnl = llmResult.Dgnl
+                }
             };
         }
         catch (Exception ex)
@@ -469,6 +478,35 @@ public sealed class EligibilityEvaluationAgent : IEligibilityEvaluationAgent
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         });
+    }
+
+    private static void UpdateScoreEntity(MAEMS.Domain.Entities.Score score, MAEMS.Application.DTOs.Agent.LlmEligibilityResponseDto llm)
+    {
+        if (llm.Hk2Math.HasValue) score.Hk2Math = llm.Hk2Math;
+        if (llm.Hk2Literature.HasValue) score.Hk2Literature = llm.Hk2Literature;
+        if (llm.Hk2ForeignLanguage.HasValue) score.Hk2ForeignLanguage = llm.Hk2ForeignLanguage;
+        if (llm.Hk2History.HasValue) score.Hk2History = llm.Hk2History;
+        if (llm.Hk2Physics.HasValue) score.Hk2Physics = llm.Hk2Physics;
+        if (llm.Hk2Chemistry.HasValue) score.Hk2Chemistry = llm.Hk2Chemistry;
+        if (llm.Hk2Biology.HasValue) score.Hk2Biology = llm.Hk2Biology;
+        if (llm.Hk2Geography.HasValue) score.Hk2Geography = llm.Hk2Geography;
+        if (llm.Hk2EconomicsLaw.HasValue) score.Hk2EconomicsLaw = llm.Hk2EconomicsLaw;
+        if (llm.Hk2Informatics.HasValue) score.Hk2Informatics = llm.Hk2Informatics;
+        if (llm.Hk2Technology.HasValue) score.Hk2Technology = llm.Hk2Technology;
+
+        if (llm.ThptMath.HasValue) score.ThptMath = llm.ThptMath;
+        if (llm.ThptLiterature.HasValue) score.ThptLiterature = llm.ThptLiterature;
+        if (llm.ThptForeignLanguage.HasValue) score.ThptForeignLanguage = llm.ThptForeignLanguage;
+        if (llm.ThptHistory.HasValue) score.ThptHistory = llm.ThptHistory;
+        if (llm.ThptGeography.HasValue) score.ThptGeography = llm.ThptGeography;
+        if (llm.ThptPhysics.HasValue) score.ThptPhysics = llm.ThptPhysics;
+        if (llm.ThptChemistry.HasValue) score.ThptChemistry = llm.ThptChemistry;
+        if (llm.ThptBiology.HasValue) score.ThptBiology = llm.ThptBiology;
+        if (llm.ThptEconomicsLaw.HasValue) score.ThptEconomicsLaw = llm.ThptEconomicsLaw;
+        if (llm.ThptInformatics.HasValue) score.ThptInformatics = llm.ThptInformatics;
+        if (llm.ThptTechnology.HasValue) score.ThptTechnology = llm.ThptTechnology;
+
+        if (llm.Dgnl.HasValue) score.Dgnl = llm.Dgnl;
     }
 
     private static string StripMarkdownFences(string content)

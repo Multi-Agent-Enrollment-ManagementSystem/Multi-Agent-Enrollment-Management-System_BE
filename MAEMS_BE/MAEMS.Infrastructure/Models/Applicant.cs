@@ -50,4 +50,6 @@ public partial class Applicant
     public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
 
     public virtual User User { get; set; }
+
+    public virtual Score Score { get; set; }
 }

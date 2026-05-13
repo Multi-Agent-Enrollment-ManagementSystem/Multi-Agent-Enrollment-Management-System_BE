@@ -25,10 +25,7 @@ public static class DependencyInjection
 
         // EligibilityEvaluationAgent — check document completeness + profile quality
         // Registered BEFORE DocumentVerificationAgent so it can be injected into it
-        services.AddHttpClient<IEligibilityEvaluationAgent, EligibilityEvaluationAgent>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-        });
+        services.AddScoped<IEligibilityEvaluationAgent, EligibilityEvaluationAgent>();
 
         // DocumentVerificationAgent — cross-check documents on submission (fire-and-forget)
         // Depends on IEligibilityEvaluationAgent
