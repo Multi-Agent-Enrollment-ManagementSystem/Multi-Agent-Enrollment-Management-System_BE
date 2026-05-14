@@ -47,6 +47,8 @@ public partial class postgresContext : DbContext
 
     public virtual DbSet<Role> Roles { get; set; }
 
+    public virtual DbSet<Score> Scores { get; set; }
+
     public virtual DbSet<TuitionFee> TuitionFees { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
@@ -568,6 +570,58 @@ public partial class postgresContext : DbContext
                 .HasForeignKey(d => d.ArticleId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_register_event_article");
+        });
+
+        modelBuilder.Entity<Score>(entity =>
+        {
+            entity.HasKey(e => e.ScoreId).HasName("score_pkey");
+
+            entity.ToTable("score");
+
+            entity.HasIndex(e => e.ApplicantId, "score_applicant_id_key").IsUnique();
+
+            entity.Property(e => e.ScoreId).HasColumnName("score_id");
+            entity.Property(e => e.ApplicantId).HasColumnName("applicant_id");
+            
+            // HK2
+            entity.Property(e => e.Hk2Math).HasPrecision(4, 2).HasColumnName("hk2_math");
+            entity.Property(e => e.Hk2Literature).HasPrecision(4, 2).HasColumnName("hk2_literature");
+            entity.Property(e => e.Hk2ForeignLanguage).HasPrecision(4, 2).HasColumnName("hk2_foreign_language");
+            entity.Property(e => e.Hk2History).HasPrecision(4, 2).HasColumnName("hk2_history");
+            entity.Property(e => e.Hk2Physics).HasPrecision(4, 2).HasColumnName("hk2_physics");
+            entity.Property(e => e.Hk2Chemistry).HasPrecision(4, 2).HasColumnName("hk2_chemistry");
+            entity.Property(e => e.Hk2Biology).HasPrecision(4, 2).HasColumnName("hk2_biology");
+            entity.Property(e => e.Hk2Geography).HasPrecision(4, 2).HasColumnName("hk2_geography");
+            entity.Property(e => e.Hk2EconomicsLaw).HasPrecision(4, 2).HasColumnName("hk2_economics_law");
+            entity.Property(e => e.Hk2Informatics).HasPrecision(4, 2).HasColumnName("hk2_informatics");
+            entity.Property(e => e.Hk2Technology).HasPrecision(4, 2).HasColumnName("hk2_technology");
+
+            // THPT Quốc gia
+            entity.Property(e => e.ThptMath).HasPrecision(4, 2).HasColumnName("thpt_math");
+            entity.Property(e => e.ThptLiterature).HasPrecision(4, 2).HasColumnName("thpt_literature");
+            entity.Property(e => e.ThptForeignLanguage).HasPrecision(4, 2).HasColumnName("thpt_foreign_language");
+            entity.Property(e => e.ThptHistory).HasPrecision(4, 2).HasColumnName("thpt_history");
+            entity.Property(e => e.ThptGeography).HasPrecision(4, 2).HasColumnName("thpt_geography");
+            entity.Property(e => e.ThptPhysics).HasPrecision(4, 2).HasColumnName("thpt_physics");
+            entity.Property(e => e.ThptChemistry).HasPrecision(4, 2).HasColumnName("thpt_chemistry");
+            entity.Property(e => e.ThptBiology).HasPrecision(4, 2).HasColumnName("thpt_biology");
+            entity.Property(e => e.ThptEconomicsLaw).HasPrecision(4, 2).HasColumnName("thpt_economics_law");
+            entity.Property(e => e.ThptInformatics).HasPrecision(4, 2).HasColumnName("thpt_informatics");
+            entity.Property(e => e.ThptTechnology).HasPrecision(4, 2).HasColumnName("thpt_technology");
+
+            // Đánh giá Năng lực
+            entity.Property(e => e.Dgnl).HasPrecision(6, 2).HasColumnName("dgnl");
+
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Applicant)
+                .WithOne(p => p.Score)
+                .HasForeignKey<Score>(d => d.ApplicantId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("fk_score_applicant");
         });
 
         modelBuilder.Entity<Role>(entity =>

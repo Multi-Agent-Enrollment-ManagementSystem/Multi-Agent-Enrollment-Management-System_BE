@@ -31,4 +31,6 @@ public class EligibilityEvaluationResult
 
     /// <summary>Nhận xét / lý do từ LLM.</summary>
     public string? Details { get; set; }
+
+    public MAEMS.Application.DTOs.Agent.LlmEligibilityResponseDto? RawLlmResponse { get; set; }
 }

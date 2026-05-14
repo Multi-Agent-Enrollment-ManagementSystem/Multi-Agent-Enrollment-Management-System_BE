@@ -20,6 +20,8 @@ public interface IUnitOfWork : IDisposable
 
     IArticleRepository Articles { get; }
 
+    IScoreRepository Scores { get; }
+
     INotificationRepository Notifications { get; }
 
     IPaymentRepository Payments { get; }
